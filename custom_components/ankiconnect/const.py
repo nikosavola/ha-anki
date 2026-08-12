@@ -16,3 +16,11 @@ CARD_QUERIES = {
     "new_cards": "is:new",
     "review_cards": "is:review",
 }
+
+# Not a findCards query; fetched via getNumCardsReviewedToday instead.
+REVIEWED_TODAY_KEY = "reviewed_today"
+
+# All sensor keys, in the order entities are created.
+SENSOR_KEYS = (*CARD_QUERIES, REVIEWED_TODAY_KEY)
+
+SYNC_SERVICE = "sync"

@@ -19,6 +19,41 @@ TEST_PORT = 8765
 TEST_URL = f"http://{TEST_HOST}:{TEST_PORT}"
 
 
+def pytest_addoption(parser: pytest.Parser) -> None:
+    """Add --run-e2e, opting in to tests/e2e's real-Anki-instance tests."""
+    parser.addoption(
+        "--run-e2e",
+        action="store_true",
+        default=False,
+        help="run end-to-end tests against a real Anki + AnkiConnect instance",
+    )
+
+
+def pytest_configure(config: pytest.Config) -> None:
+    """Register the "e2e" marker used by tests/e2e."""
+    config.addinivalue_line(
+        "markers", "e2e: end-to-end test requiring a real Anki + AnkiConnect instance"
+    )
+
+
+def pytest_collection_modifyitems(
+    config: pytest.Config, items: list[pytest.Item]
+) -> None:
+    """Skip e2e-marked tests unless --run-e2e is passed.
+
+    A bare `pytest` run still collects tests/e2e (it's under the tests/
+    testpaths), but nothing there can pass without a real running instance,
+    so it's opt-in rather than deselected outright: skipped, not silently
+    absent.
+    """
+    if config.getoption("--run-e2e"):
+        return
+    skip_e2e = pytest.mark.skip(reason="need --run-e2e to run")
+    for item in items:
+        if "e2e" in item.keywords:
+            item.add_marker(skip_e2e)
+
+
 @pytest.fixture(autouse=True)
 def auto_enable_custom_integrations(enable_custom_integrations: None) -> None:
     """Enable loading the integration from custom_components."""
@@ -37,8 +72,10 @@ class AnkiConnectResponder:
         self._version: int = 6
         self._version_error: str | None = None
         self._multi_error: str | None = None
+        self._sync_error: str | None = None
         self._cards_by_query: dict[str, list[int]] = {}
         self._query_errors: dict[str, str] = {}
+        self._reviewed_today: int = 0
         aioclient_mock.post(TEST_URL, side_effect=self._respond)
 
     def set_version_error(self, error: str) -> None:
@@ -49,6 +86,10 @@ class AnkiConnectResponder:
         """Make the whole "multi" action return an AnkiConnect error, or clear it."""
         self._multi_error = error
 
+    def set_sync_error(self, error: str | None) -> None:
+        """Make the "sync" action return an AnkiConnect error, or clear it."""
+        self._sync_error = error
+
     def set_cards(self, query: str, card_ids: list[int]) -> None:
         """Program the card IDs a findCards query, batched via multi, returns."""
         self._cards_by_query[query] = card_ids
@@ -56,6 +97,10 @@ class AnkiConnectResponder:
     def set_query_error(self, query: str, error: str) -> None:
         """Make one findCards query, batched via multi, return an error."""
         self._query_errors[query] = error
+
+    def set_reviewed_today(self, count: int) -> None:
+        """Program the getNumCardsReviewedToday action's result."""
+        self._reviewed_today = count
 
     async def _respond(
         self, method: str, url: Any, data: dict[str, Any]
@@ -68,6 +113,8 @@ class AnkiConnectResponder:
                 if self._version_error
                 else {"result": self._version, "error": None}
             )
+        elif action == "sync":
+            body = {"result": None, "error": self._sync_error}
         elif action == "multi":
             body = self._multi_body(data["params"]["actions"])
         else:
@@ -79,13 +126,15 @@ class AnkiConnectResponder:
         if self._multi_error:
             return {"result": None, "error": self._multi_error}
 
-        sub_results = [
-            self._sub_result(action["params"]["query"]) for action in actions
-        ]
+        sub_results = [self._sub_result(action) for action in actions]
         return {"result": sub_results, "error": None}
 
-    def _sub_result(self, query: str) -> dict[str, Any]:
-        """Build one findCards sub-result within a "multi" response."""
+    def _sub_result(self, action: dict[str, Any]) -> dict[str, Any]:
+        """Build one sub-action's result within a "multi" response."""
+        if action["action"] == "getNumCardsReviewedToday":
+            return {"result": self._reviewed_today, "error": None}
+
+        query = action["params"]["query"]
         if query in self._query_errors:
             return {"result": None, "error": self._query_errors[query]}
         return {"result": self._cards_by_query.get(query, []), "error": None}

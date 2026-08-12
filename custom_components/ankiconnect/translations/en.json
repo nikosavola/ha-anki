@@ -32,7 +32,16 @@
       },
       "review_cards": {
         "name": "Review cards"
+      },
+      "reviewed_today": {
+        "name": "Reviewed today"
       }
+    }
+  },
+  "services": {
+    "sync": {
+      "name": "Sync",
+      "description": "Asks AnkiConnect to sync with AnkiWeb, then refreshes this integration's sensors."
     }
   }
 }

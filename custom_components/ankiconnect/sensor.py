@@ -4,11 +4,14 @@ from __future__ import annotations
 
 from homeassistant.components.sensor import SensorEntity, SensorStateClass
 from homeassistant.core import HomeAssistant
+from homeassistant.exceptions import HomeAssistantError
+from homeassistant.helpers import entity_platform
 from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
-from .const import CARD_QUERIES, DOMAIN
+from .api import AnkiConnectError
+from .const import DOMAIN, SENSOR_KEYS, SYNC_SERVICE
 from .coordinator import AnkiConnectConfigEntry, AnkiConnectDataUpdateCoordinator
 
 
@@ -17,17 +20,20 @@ async def async_setup_entry(
     entry: AnkiConnectConfigEntry,
     async_add_entities: AddEntitiesCallback,
 ) -> None:
-    """Set up AnkiConnect card count sensors from a config entry."""
+    """Set up AnkiConnect sensors from a config entry."""
     coordinator = entry.runtime_data
     async_add_entities(
-        AnkiConnectCardCountSensor(coordinator, entry, key) for key in CARD_QUERIES
+        AnkiConnectCardCountSensor(coordinator, entry, key) for key in SENSOR_KEYS
     )
+
+    platform = entity_platform.async_get_current_platform()
+    platform.async_register_entity_service(SYNC_SERVICE, None, "async_sync")
 
 
 class AnkiConnectCardCountSensor(
     CoordinatorEntity[AnkiConnectDataUpdateCoordinator], SensorEntity
 ):
-    """Sensor reporting the number of cards matching one AnkiConnect query."""
+    """Sensor reporting one AnkiConnect count value."""
 
     _attr_has_entity_name = True
     _attr_native_unit_of_measurement = "cards"
@@ -53,5 +59,19 @@ class AnkiConnectCardCountSensor(
 
     @property
     def native_value(self) -> int | None:
-        """The current card count for this sensor's query."""
+        """The current value for this sensor's key."""
         return self.coordinator.data.get(self._key)
+
+    async def async_sync(self) -> None:
+        """Trigger an AnkiConnect sync, then refresh sensor state immediately.
+
+        Raises:
+            HomeAssistantError: If AnkiConnect can't be reached, or reports
+                an error (e.g. no AnkiWeb account configured).
+
+        """
+        try:
+            await self.coordinator.client.sync()
+        except AnkiConnectError as err:
+            raise HomeAssistantError(f"Failed to sync Anki: {err}") from err
+        await self.coordinator.async_request_refresh()

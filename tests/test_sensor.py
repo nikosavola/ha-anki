@@ -1,14 +1,17 @@
 """Tests for the AnkiConnect sensor platform and entry setup."""
 
 from homeassistant.config_entries import ConfigEntryState
+from homeassistant.const import ATTR_ENTITY_ID
 from homeassistant.core import HomeAssistant
+from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers import entity_registry as er
+import pytest
 from pytest_homeassistant_custom_component.common import (
     MockConfigEntry,
     async_fire_time_changed,
 )
 
-from custom_components.ankiconnect.const import DOMAIN, UPDATE_INTERVAL
+from custom_components.ankiconnect.const import DOMAIN, SYNC_SERVICE, UPDATE_INTERVAL
 
 from .conftest import AnkiConnectResponder
 
@@ -40,6 +43,7 @@ async def test_sensors_report_card_counts(
     anki_responder.set_cards("is:due", [1, 2])
     anki_responder.set_cards("is:new", [3, 4, 5])
     anki_responder.set_cards("is:review", [])
+    anki_responder.set_reviewed_today(7)
     mock_config_entry.add_to_hass(hass)
 
     assert await hass.config_entries.async_setup(mock_config_entry.entry_id)
@@ -48,6 +52,7 @@ async def test_sensors_report_card_counts(
     assert _state(hass, mock_config_entry, "cards_due") == "2"
     assert _state(hass, mock_config_entry, "new_cards") == "3"
     assert _state(hass, mock_config_entry, "review_cards") == "0"
+    assert _state(hass, mock_config_entry, "reviewed_today") == "7"
 
 
 async def test_setup_retries_on_update_failure(
@@ -131,3 +136,47 @@ async def test_unload_entry(
 
     assert mock_config_entry.state is ConfigEntryState.NOT_LOADED
     assert _state(hass, mock_config_entry, "cards_due") == "unavailable"
+
+
+async def test_sync_service_refreshes_sensors(
+    hass: HomeAssistant,
+    anki_responder: AnkiConnectResponder,
+    mock_config_entry: MockConfigEntry,
+) -> None:
+    """The sync service triggers a sync, then an immediate sensor refresh."""
+    anki_responder.set_cards("is:due", [1])
+    mock_config_entry.add_to_hass(hass)
+    assert await hass.config_entries.async_setup(mock_config_entry.entry_id)
+    await hass.async_block_till_done()
+    assert _state(hass, mock_config_entry, "cards_due") == "1"
+
+    anki_responder.set_cards("is:due", [1, 2])
+    entity_id = _maybe_entity_id(hass, mock_config_entry, "cards_due")
+    assert entity_id is not None
+    await hass.services.async_call(
+        DOMAIN, SYNC_SERVICE, {ATTR_ENTITY_ID: entity_id}, blocking=True
+    )
+    await hass.async_block_till_done()
+
+    assert _state(hass, mock_config_entry, "cards_due") == "2"
+
+
+async def test_sync_service_raises_on_error(
+    hass: HomeAssistant,
+    anki_responder: AnkiConnectResponder,
+    mock_config_entry: MockConfigEntry,
+) -> None:
+    """The sync service surfaces an AnkiConnect error as HomeAssistantError."""
+    anki_responder.set_cards("is:due", [1])
+    mock_config_entry.add_to_hass(hass)
+    assert await hass.config_entries.async_setup(mock_config_entry.entry_id)
+    await hass.async_block_till_done()
+
+    anki_responder.set_sync_error("please log in to AnkiWeb first")
+    entity_id = _maybe_entity_id(hass, mock_config_entry, "cards_due")
+    assert entity_id is not None
+
+    with pytest.raises(HomeAssistantError, match="please log in to AnkiWeb first"):
+        await hass.services.async_call(
+            DOMAIN, SYNC_SERVICE, {ATTR_ENTITY_ID: entity_id}, blocking=True
+        )

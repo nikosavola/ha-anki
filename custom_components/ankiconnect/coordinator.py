@@ -38,8 +38,8 @@ class AnkiConnectDataUpdateCoordinator(DataUpdateCoordinator[dict[str, int]]):
         self.client = client
 
     async def _async_update_data(self) -> dict[str, int]:
-        """Fetch card counts for every configured query in one batched request."""
+        """Fetch all sensor data in one batched request."""
         try:
-            return await self.client.find_cards_counts(CARD_QUERIES)
+            return await self.client.get_sensor_data(CARD_QUERIES)
         except AnkiConnectError as err:
             raise UpdateFailed(f"Error communicating with AnkiConnect: {err}") from err

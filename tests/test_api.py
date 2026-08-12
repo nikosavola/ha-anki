@@ -58,33 +58,39 @@ async def test_get_version_raises_on_connection_error(
         await client.get_version()
 
 
-async def test_find_cards_counts_batches_into_one_request(
+async def test_get_sensor_data_batches_into_one_request(
     client: AnkiConnectClient,
     anki_responder: AnkiConnectResponder,
     aioclient_mock: AiohttpClientMocker,
 ) -> None:
-    """All configured queries are fetched in a single batched request."""
+    """All configured queries, plus reviewed_today, are fetched in one request."""
     anki_responder.set_cards("is:due", [1, 2, 3])
     anki_responder.set_cards("is:new", [4])
     anki_responder.set_cards("is:review", [])
+    anki_responder.set_reviewed_today(7)
 
-    counts = await client.find_cards_counts(CARD_QUERIES)
+    data = await client.get_sensor_data(CARD_QUERIES)
 
-    assert counts == {"cards_due": 3, "new_cards": 1, "review_cards": 0}
+    assert data == {
+        "cards_due": 3,
+        "new_cards": 1,
+        "review_cards": 0,
+        "reviewed_today": 7,
+    }
     assert len(aioclient_mock.mock_calls) == 1
 
 
-async def test_find_cards_counts_raises_on_error(
+async def test_get_sensor_data_raises_on_error(
     client: AnkiConnectClient, anki_responder: AnkiConnectResponder
 ) -> None:
     """An error on the overall multi request raises AnkiConnectApiError."""
     anki_responder.set_multi_error("collection is not available")
 
     with pytest.raises(AnkiConnectApiError, match="collection is not available"):
-        await client.find_cards_counts(CARD_QUERIES)
+        await client.get_sensor_data(CARD_QUERIES)
 
 
-async def test_find_cards_counts_raises_on_query_error(
+async def test_get_sensor_data_raises_on_query_error(
     client: AnkiConnectClient, anki_responder: AnkiConnectResponder
 ) -> None:
     """An error on a single query still raises, even if the others succeed."""
@@ -92,4 +98,21 @@ async def test_find_cards_counts_raises_on_query_error(
     anki_responder.set_query_error("is:new", "invalid search")
 
     with pytest.raises(AnkiConnectApiError, match="invalid search"):
-        await client.find_cards_counts(CARD_QUERIES)
+        await client.get_sensor_data(CARD_QUERIES)
+
+
+async def test_sync(
+    client: AnkiConnectClient, anki_responder: AnkiConnectResponder
+) -> None:
+    """Sync completes without raising when AnkiConnect reports no error."""
+    await client.sync()
+
+
+async def test_sync_raises_on_error(
+    client: AnkiConnectClient, anki_responder: AnkiConnectResponder
+) -> None:
+    """Sync raises AnkiConnectApiError when AnkiConnect reports one."""
+    anki_responder.set_sync_error("please log in to AnkiWeb first")
+
+    with pytest.raises(AnkiConnectApiError, match="please log in to AnkiWeb first"):
+        await client.sync()

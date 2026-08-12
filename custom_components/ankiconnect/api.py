@@ -6,7 +6,7 @@ from typing import Any
 
 import aiohttp
 
-from .const import ANKICONNECT_API_VERSION
+from .const import ANKICONNECT_API_VERSION, REVIEWED_TODAY_KEY
 
 REQUEST_TIMEOUT = aiohttp.ClientTimeout(total=10)
 
@@ -70,23 +70,28 @@ class AnkiConnectClient:
         """Return the AnkiConnect API version, also used as a connectivity check."""
         return await self._request("version")
 
-    async def find_cards_counts(self, queries: dict[str, str]) -> dict[str, int]:
-        """Return the card count for each named query, batched into one request.
+    async def sync(self) -> None:
+        """Trigger AnkiConnect's own sync with AnkiWeb.
 
-        Uses AnkiConnect's "multi" action so polling multiple queries costs a
-        single HTTP round trip instead of one per query.
+        Errors (AnkiConnect unreachable, no AnkiWeb account configured, ...)
+        propagate from `_request` as AnkiConnectError.
+        """
+        await self._request("sync")
+
+    async def get_sensor_data(self, queries: dict[str, str]) -> dict[str, int]:
+        """Return the card count for each named query, plus today's review count.
+
+        Batched into one "multi" request, so polling costs a single HTTP round
+        trip regardless of how many sensors are configured. Errors propagate
+        from `_multi` as AnkiConnectError.
 
         Returns:
-            A mapping from each input key in `queries` to its matching card count.
-
-        Raises:
-            AnkiConnectApiError: If AnkiConnect reports an error for the
-                overall request or for any individual query within it.
-            AnkiConnectConnectionError: If AnkiConnect can't be reached, or
-                replies with an unexpected response shape.
+            A mapping from each input key in `queries` to its matching card
+            count, plus a "reviewed_today" key for the number of cards
+            reviewed today.
 
         """
-        names = list(queries)
+        names = [*queries, REVIEWED_TODAY_KEY]
         actions = [
             {
                 "action": "findCards",
@@ -95,19 +100,43 @@ class AnkiConnectClient:
             }
             for query in queries.values()
         ]
+        actions.append({
+            "action": "getNumCardsReviewedToday",
+            "version": ANKICONNECT_API_VERSION,
+        })
+
+        results = await self._multi(actions)
+        data: dict[str, int] = {}
+        for name, value in zip(names, results, strict=True):
+            data[name] = value if name == REVIEWED_TODAY_KEY else len(value)
+        return data
+
+    async def _multi(self, actions: list[dict[str, Any]]) -> list[Any]:
+        """Send a batch of actions via AnkiConnect's "multi" action.
+
+        Returns:
+            The "result" value of each sub-action, in the same order.
+
+        Raises:
+            AnkiConnectApiError: If AnkiConnect reports an error for the
+                overall request or for any individual sub-action.
+            AnkiConnectConnectionError: If AnkiConnect can't be reached, or
+                replies with an unexpected response shape.
+
+        """
         results = await self._request("multi", {"actions": actions})
-        if not isinstance(results, list) or len(results) != len(names):
+        if not isinstance(results, list) or len(results) != len(actions):
             raise AnkiConnectConnectionError(
                 f"Unexpected multi response shape: {results!r}"
             )
 
-        counts: dict[str, int] = {}
-        for name, sub_result in zip(names, results, strict=True):
+        values: list[Any] = []
+        for sub_result in results:
             if not isinstance(sub_result, dict):
                 raise AnkiConnectConnectionError(
                     f"Unexpected sub-result shape: {sub_result!r}"
                 )
             if sub_result.get("error") is not None:
                 raise AnkiConnectApiError(sub_result["error"])
-            counts[name] = len(sub_result["result"])
-        return counts
+            values.append(sub_result["result"])
+        return values

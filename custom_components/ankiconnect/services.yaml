@@ -3,3 +3,35 @@ sync:
     entity:
       integration: ankiconnect
       domain: sensor
+add_note:
+  fields:
+    config_entry_id:
+      required: true
+      selector:
+        config_entry:
+          integration: ankiconnect
+    deck_name:
+      required: true
+      example: "Default"
+      selector:
+        text:
+    model_name:
+      required: true
+      example: "Basic"
+      selector:
+        text:
+    fields:
+      required: true
+      example: '{"Front": "Capital of France", "Back": "Paris"}'
+      selector:
+        object:
+    tags:
+      required: false
+      selector:
+        text:
+          multiple: true
+    allow_duplicate:
+      required: false
+      default: false
+      selector:
+        boolean:

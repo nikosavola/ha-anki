@@ -33,3 +33,14 @@ CONF_CUSTOM_QUERIES = "custom_queries"
 CONF_QUERY = "query"
 
 SYNC_SERVICE = "sync"
+ADD_NOTE_SERVICE = "add_note"
+
+# add_note is a domain service, not an entity service: it mutates the
+# collection, so it must run exactly once per call, which an entity service
+# targeting a device or multiple entities can't guarantee.
+CONF_CONFIG_ENTRY_ID = "config_entry_id"
+ATTR_DECK_NAME = "deck_name"
+ATTR_MODEL_NAME = "model_name"
+ATTR_FIELDS = "fields"
+ATTR_TAGS = "tags"
+ATTR_ALLOW_DUPLICATE = "allow_duplicate"

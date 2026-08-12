@@ -95,6 +95,35 @@ class AnkiConnectClient:
         card_ids = await self._request("findCards", {"query": query})
         return len(card_ids)
 
+    async def add_note(
+        self,
+        *,
+        deck_name: str,
+        model_name: str,
+        fields: dict[str, str],
+        tags: list[str] | None = None,
+        allow_duplicate: bool = False,
+    ) -> int:
+        """Create a new note, returning its note ID.
+
+        Errors propagate from `_request` as AnkiConnectError, e.g. for a
+        missing deck or model, or a duplicate note when allow_duplicate is
+        false.
+
+        Returns:
+            The newly created note's ID.
+
+        """
+        note: dict[str, Any] = {
+            "deckName": deck_name,
+            "modelName": model_name,
+            "fields": fields,
+            "options": {"allowDuplicate": allow_duplicate},
+        }
+        if tags:
+            note["tags"] = tags
+        return await self._request("addNote", {"note": note})
+
     async def get_sensor_data(self, queries: dict[str, str]) -> dict[str, int | None]:
         """Return the card count for each named query, plus today's review count.
 

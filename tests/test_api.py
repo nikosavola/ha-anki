@@ -136,6 +136,31 @@ async def test_count_cards_raises_on_error(
         await client.count_cards("not a real query")
 
 
+async def test_add_note(
+    client: AnkiConnectClient, anki_responder: AnkiConnectResponder
+) -> None:
+    """add_note returns the newly created note's ID."""
+    note_id = await client.add_note(
+        deck_name="Default",
+        model_name="Basic",
+        fields={"Front": "Capital of France", "Back": "Paris"},
+    )
+
+    assert note_id == 12345
+
+
+async def test_add_note_raises_on_duplicate(
+    client: AnkiConnectClient, anki_responder: AnkiConnectResponder
+) -> None:
+    """A duplicate note raises AnkiConnectApiError when allow_duplicate is false."""
+    anki_responder.set_add_note_error("cannot create note because it is a duplicate")
+
+    with pytest.raises(AnkiConnectApiError, match="duplicate"):
+        await client.add_note(
+            deck_name="Default", model_name="Basic", fields={"Front": "x", "Back": "y"}
+        )
+
+
 async def test_sync(
     client: AnkiConnectClient, anki_responder: AnkiConnectResponder
 ) -> None:

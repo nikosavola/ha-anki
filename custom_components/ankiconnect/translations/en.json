@@ -78,6 +78,36 @@
     "sync": {
       "name": "Sync",
       "description": "Asks AnkiConnect to sync with AnkiWeb, then refreshes this integration's sensors."
+    },
+    "add_note": {
+      "name": "Add note",
+      "description": "Creates a new Anki note via AnkiConnect, then refreshes this integration's sensors.",
+      "fields": {
+        "config_entry_id": {
+          "name": "AnkiConnect instance",
+          "description": "Which configured AnkiConnect instance to add the note to."
+        },
+        "deck_name": {
+          "name": "Deck name",
+          "description": "The deck the note is added to."
+        },
+        "model_name": {
+          "name": "Note type",
+          "description": "The name of the Anki note type (model) to use."
+        },
+        "fields": {
+          "name": "Fields",
+          "description": "A mapping of field name to value, matching the note type's fields."
+        },
+        "tags": {
+          "name": "Tags",
+          "description": "Tags to add to the note."
+        },
+        "allow_duplicate": {
+          "name": "Allow duplicate",
+          "description": "Add the note even if AnkiConnect considers it a duplicate of an existing one."
+        }
+      }
     }
   }
 }

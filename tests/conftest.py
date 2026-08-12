@@ -76,6 +76,9 @@ class AnkiConnectResponder:
         self._cards_by_query: dict[str, list[int]] = {}
         self._query_errors: dict[str, str] = {}
         self._reviewed_today: int = 0
+        self._add_note_result: int | None = 12345
+        self._add_note_error: str | None = None
+        self.add_note_call_count = 0
         aioclient_mock.post(TEST_URL, side_effect=self._respond)
 
     def set_version_error(self, error: str) -> None:
@@ -102,6 +105,10 @@ class AnkiConnectResponder:
         """Program the getNumCardsReviewedToday action's result."""
         self._reviewed_today = count
 
+    def set_add_note_error(self, error: str | None) -> None:
+        """Make the "addNote" action return an AnkiConnect error, or clear it."""
+        self._add_note_error = error
+
     async def _respond(
         self, method: str, url: Any, data: dict[str, Any]
     ) -> AiohttpClientMockResponse:
@@ -123,6 +130,13 @@ class AnkiConnectResponder:
                 body = {"result": None, "error": self._query_errors[query]}
             else:
                 body = {"result": self._cards_by_query.get(query, []), "error": None}
+        elif action == "addNote":
+            self.add_note_call_count += 1
+            body = (
+                {"result": None, "error": self._add_note_error}
+                if self._add_note_error
+                else {"result": self._add_note_result, "error": None}
+            )
         else:
             raise AssertionError(f"Unexpected AnkiConnect action in test: {action}")
         return AiohttpClientMockResponse(method, url, json=body)

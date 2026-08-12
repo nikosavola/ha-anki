@@ -1,0 +1,181 @@
+[project]
+name = "ha-anki"
+version = "0.1.0"
+description = "Home Assistant integration exposing Anki card counts via AnkiConnect"
+readme = "README.md"
+requires-python = ">=3.14.2"
+license = { file = "LICENSE" }
+authors = [{ name = "Niko Savola", email = "nikomsavola@gmail.com" }]
+keywords = [
+  "anki",
+  "ankiconnect",
+  "hacs",
+  "home-assistant",
+  "spaced-repetition",
+]
+classifiers = [
+  "Development Status :: 4 - Beta",
+  "Intended Audience :: End Users/Desktop",
+  "License :: OSI Approved :: Apache Software License",
+  "Operating System :: OS Independent",
+  "Programming Language :: Python :: 3.14",
+  "Topic :: Home Automation",
+  "Typing :: Typed",
+]
+
+[project.urls]
+"Bug Tracker" = "https://github.com/nikosavola/ha-anki/issues"
+changelog = "https://github.com/nikosavola/ha-anki/releases"
+repository = "https://github.com/nikosavola/ha-anki/"
+
+[dependency-groups]
+dev = [
+  "pytest>=9.0.0",
+  "pytest-cov>=7.0.0",
+  "pytest-freezer>=0.4.9",
+  "pytest-homeassistant-custom-component>=0.13.354",
+]
+github = ["pytest-github-actions-annotate-failures>=0.4.2"]
+
+[tool.codespell]
+# "hass" is the near-universal name for the HomeAssistant instance argument, not a typo.
+ignore-words-list = "hass"
+
+[tool.coverage.run]
+source = ["custom_components/ankiconnect"]
+
+[tool.coverage.report]
+exclude_also = ["if TYPE_CHECKING:"]
+
+[tool.pyrefly]
+python-version = "3.14"
+project-includes = ["custom_components/**/*.py", "tests/**/*.py"]
+
+[tool.pyrefly.errors]
+# Every HA entity platform narrows inherited `_attr_*`/coordinator class attributes
+# (declared as a broader union on the base class) to a specific type. That is the
+# standard pattern across HA core and every custom integration, not a real bug here.
+bad-override-mutable-attribute = "ignore"
+
+[tool.pytest]
+testpaths = ["tests"]
+asyncio_mode = "auto"
+
+# Mirrors the Home Assistant core lint setup, trimmed to what a custom integration needs.
+[tool.ruff]
+required-version = ">=0.16.0"
+target-version = "py314"
+preview = true
+
+[tool.ruff.lint]
+select = [
+  "A",  # flake8-builtins
+  "ARG",  # flake8-unused-arguments
+  "ASYNC",  # flake8-async
+  "B",  # flake8-bugbear
+  "BLE",  # flake8-blind-except
+  "C",  # complexity
+  "COM818",  # Trailing comma on bare tuple prohibited
+  "D",  # docstrings
+  "DOC",  # pydoclint
+  "E",  # pycodestyle
+  "ERA",  # eradicate
+  "F",  # pyflakes/autoflake
+  "FLY",  # flynt
+  "FURB",  # refurb
+  "G",  # flake8-logging-format
+  "I",  # isort
+  "INP",  # flake8-no-pep420
+  "ISC",  # flake8-implicit-str-concat
+  "LOG",  # flake8-logging
+  "N",  # pep8-naming
+  "PERF",  # Perflint
+  "PGH",  # pygrep-hooks
+  "PIE",  # flake8-pie
+  "PL",  # pylint
+  "PT",  # flake8-pytest-style
+  "PTH",  # flake8-use-pathlib
+  "PYI",  # flake8-pyi
+  "Q",  # flake8-quotes
+  "RET",  # flake8-return
+  "RSE",  # flake8-raise
+  "RUF",  # Ruff-specific rules
+  "S",  # flake8-bandit
+  "SIM",  # flake8-simplify
+  "SLF",  # flake8-self
+  "SLOT",  # flake8-slots
+  "T10",  # flake8-debugger
+  "T20",  # flake8-print
+  "TC",  # flake8-type-checking
+  "TID",  # Tidy imports
+  "TRY",  # tryceratops
+  "UP",  # pyupgrade
+  "W",  # pycodestyle
+]
+
+ignore = [
+  "D202",  # No blank lines allowed after function docstring
+  "D203",  # 1 blank line required before class docstring
+  "D213",  # Multi-line docstring summary should start at the second line
+  "D417",  # Missing argument descriptions in docstring
+  "E501",  # Line too long
+  "PLR0911",  # Too many return statements
+  "PLR0912",  # Too many branches
+  "PLR0913",  # Too many arguments in function definition
+  "PLR0915",  # Too many statements
+  "PLR0917",  # Too many positional arguments
+  "PLR2004",  # Magic value used in comparison
+  "PT011",  # pytest.raises({exception}) is too broad
+  "PT018",  # Assertion should be broken down into multiple parts
+  "RUF012",  # Mutable class attributes should be annotated with typing.ClassVar
+  # HA platform setup functions and their test doubles must match an async callback
+  # signature even when nothing inside them awaits.
+  "RUF029",  # Function is declared `async`, but doesn't use async features
+  # A custom integration's __init__.py is required to define async_setup_entry and
+  # async_unload_entry directly, so it can never be re-export-only.
+  "RUF067",  # __init__ module should only contain docstrings and re-exports
+  # Keeps rule codes, which pair with the explanatory comments already in this file.
+  "RUF201",  # Rule code used instead of name in selectors
+  # Moving imports into type-checking blocks can mess with pytest.patch()
+  "TC001",  # Move application import into a type-checking block
+  "TC002",  # Move third-party import into a type-checking block
+  "TC003",  # Move standard library import into a type-checking block
+  "TRY003",  # Avoid specifying long messages outside the exception class
+  # May conflict with the formatter
+  "COM812",
+  "ISC001",
+]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/*" = [
+  "SLF001",  # Private member accessed
+  "S101",  # Use of `assert` detected
+  "PLC2701",  # Private name import, needed to test module-private helpers directly
+  # Fixtures like `anki_responder` are requested for their setup side effect (wiring
+  # up mocked HTTP responses), not read in the test body, so they look unused to ruff.
+  "ARG001",  # Unused function argument
+]
+"tests/e2e/*" = [
+  "S101",  # Use of `assert` detected
+  "ARG001",  # Unused function argument, see the tests/* entry above
+]
+"tests/e2e/scripts/*" = [
+  "S101",  # Use of `assert` detected
+  "T201",  # `print` used; these are operator-facing setup scripts, not library code
+  "INP001",  # Implicit namespace package; standalone scripts, never imported
+]
+
+[tool.ruff.lint.pydoclint]
+ignore-one-line-docstrings = true
+
+[tool.ruff.lint.flake8-pytest-style]
+fixture-parentheses = false
+
+[tool.ruff.lint.flake8-import-conventions.extend-aliases]
+voluptuous = "vol"
+
+[tool.ruff.lint.isort]
+combine-as-imports = true
+force-sort-within-sections = true
+known-first-party = ["custom_components", "tests"]
+split-on-trailing-comma = false

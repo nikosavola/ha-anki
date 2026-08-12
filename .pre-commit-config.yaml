@@ -1,0 +1,111 @@
+# Run with prek (https://github.com/j178/prek), a drop-in pre-commit replacement.
+#
+# Hook priorities for prek parallel execution:
+# 10: formatters and independent, read-only checkers.
+# 20: linters that depend on group 10 having already run (e.g. formatting first).
+# 30: heavier type checkers.
+# 40: global structure checks (end-of-file-fixer).
+# 50: global whitespace cleanup.
+default_language_version:
+  python: "3.14"
+
+repos:
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v6.0.0
+    hooks:
+      - id: check-yaml
+        priority: 10
+      - id: check-json
+        priority: 10
+      - id: detect-private-key
+        priority: 10
+      - id: end-of-file-fixer
+        priority: 40
+      - id: trailing-whitespace
+        priority: 50
+
+  - repo: https://github.com/codespell-project/codespell
+    rev: v2.4.3
+    hooks:
+      - id: codespell
+        priority: 10
+        additional_dependencies:
+          - tomli
+
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.16.1
+    hooks:
+      - id: ruff-check
+        priority: 10
+        args: [--fix, --exit-non-zero-on-fix, --config=pyproject.toml]
+      - id: ruff-format
+        priority: 20
+        args: [--config=pyproject.toml]
+
+  - repo: https://github.com/tombi-toml/tombi-pre-commit
+    rev: v1.2.6
+    hooks:
+      - id: tombi-format
+        priority: 10
+      - id: tombi-lint
+        priority: 20
+
+  - repo: https://github.com/facebook/pyrefly-pre-commit
+    rev: "1.2.0"
+    hooks:
+      - id: pyrefly-check
+        priority: 30
+        name: Pyrefly
+        args: ["--ignore", "missing-import"]
+        # Without homeassistant installed, base classes resolve to Any and every
+        # `@override` in the codebase falsely reports a missing parent attribute.
+        additional_dependencies:
+          - pytest-homeassistant-custom-component==0.13.354
+
+  - repo: https://github.com/python-jsonschema/check-jsonschema
+    rev: 0.37.4
+    hooks:
+      - id: check-github-workflows
+        priority: 10
+
+  - repo: https://github.com/rhysd/actionlint
+    rev: v1.7.12
+    hooks:
+      - id: actionlint
+        priority: 10
+
+  - repo: https://github.com/woodruffw/zizmor-pre-commit
+    rev: v1.29.0
+    hooks:
+      - id: zizmor
+        priority: 10
+
+  - repo: https://github.com/google/yamlfmt
+    rev: v0.21.0
+    hooks:
+      - id: yamlfmt
+        priority: 10
+        args: [-conf, .github/.yamlfmt.yaml]
+
+  - repo: https://github.com/adrienverge/yamllint
+    rev: v1.38.0
+    hooks:
+      - id: yamllint
+        priority: 20
+        args: [--strict, -c=.github/.yamllint.yaml]
+
+  - repo: https://github.com/executablebooks/mdformat
+    rev: "1.0.0"
+    hooks:
+      - id: mdformat
+        priority: 10
+        args: [--wrap=keep]
+        additional_dependencies:
+          - mdformat-gfm
+
+  - repo: https://github.com/DavidAnson/markdownlint-cli2
+    rev: v0.23.2
+    hooks:
+      - id: markdownlint-cli2
+        priority: 20
+        args: [--config, .github/.markdownlint-cli2.yaml]

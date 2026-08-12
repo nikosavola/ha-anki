@@ -1,0 +1,4 @@
+config:
+  default: true
+  MD013: false  # Line length; README wraps prose manually, not to a fixed column.
+  MD041: false  # First-line heading; README opens with a logo image instead.

@@ -1,0 +1,7 @@
+extends: default
+
+rules:
+  document-start: disable
+  line-length: disable
+  # GitHub Actions' bare `on:` key is always flagged as a truthy value otherwise.
+  truthy: disable

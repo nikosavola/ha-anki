@@ -35,7 +35,7 @@ jobs:
         run: tests/e2e/scripts/start_anki.sh
 
       - name: Run E2E tests
-        run: uv run --dev --group github pytest tests/e2e --run-e2e -v
+        run: uv run --locked --dev --group github pytest tests/e2e --run-e2e -v
 
       - name: Show Anki log
         if: failure()

@@ -79,6 +79,30 @@ class AnkiConnectConfigFlow(ConfigFlow, domain=DOMAIN):
         return AnkiConnectOptionsFlow()
 
 
+def _validate_new_query(
+    name: str, query: str, custom_queries: dict[str, Any]
+) -> tuple[str, dict[str, str]]:
+    """Check a new custom query's name/text against locally known constraints.
+
+    Only the checks that don't need AnkiConnect: the search-syntax check
+    happens separately, since it requires an await the caller's control flow
+    needs to interleave with these.
+
+    Returns:
+        The slugified name, and a dict of errors (empty if valid).
+
+    """
+    slug = slugify(name)
+    errors: dict[str, str] = {}
+    if not slug:
+        errors[CONF_NAME] = "invalid_name"
+    elif slug in custom_queries or slug in CARD_QUERIES or slug == REVIEWED_TODAY_KEY:
+        errors[CONF_NAME] = "name_exists"
+    elif not query:
+        errors[CONF_QUERY] = "empty_query"
+    return slug, errors
+
+
 class AnkiConnectOptionsFlow(OptionsFlow):
     """Add or remove custom AnkiConnect search-query sensors.
 
@@ -106,19 +130,9 @@ class AnkiConnectOptionsFlow(OptionsFlow):
         if user_input is not None:
             name = user_input[CONF_NAME].strip()
             query = user_input[CONF_QUERY].strip()
-            slug = slugify(name)
+            slug, errors = _validate_new_query(name, query, custom_queries)
 
-            if not slug:
-                errors[CONF_NAME] = "invalid_name"
-            elif (
-                slug in custom_queries
-                or slug in CARD_QUERIES
-                or slug == REVIEWED_TODAY_KEY
-            ):
-                errors[CONF_NAME] = "name_exists"
-            elif not query:
-                errors[CONF_QUERY] = "empty_query"
-            else:
+            if not errors:
                 # Built fresh, not from self.config_entry.runtime_data: the
                 # options flow can be opened even when the entry failed to
                 # load (e.g. Anki was closed at startup), in which case

@@ -18,7 +18,7 @@ jobs:
           persist-credentials: false
       - uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9  # v9.0.0
       - name: Pytest
-        run: uv run --dev --group github pytest --cov --cov-branch --cov-report=xml --junitxml=junit.xml -o junit_family=legacy
+        run: uv run --locked --dev --group github pytest --cov --cov-branch --cov-report=xml --junitxml=junit.xml -o junit_family=legacy
       # Uploads work once this repo is public and CODECOV_TOKEN is set; until
       # then these steps just warn instead of failing the job (fail_ci_if_error
       # defaults to false). Set it to true once Codecov is actually wired up.

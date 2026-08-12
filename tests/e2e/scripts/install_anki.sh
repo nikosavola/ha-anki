@@ -7,7 +7,7 @@ cd "$(dirname "${BASH_SOURCE[0]}")"
 source ./env.sh
 
 SUDO=""
-if [ "$(id -u)" -ne 0 ]; then
+if [[ "$(id -u)" -ne 0 ]]; then
   SUDO="sudo"
 fi
 
@@ -26,7 +26,7 @@ $SUDO apt-get install -y -qq libasound2t64 || $SUDO apt-get install -y -qq libas
 
 rm -rf "$ANKI_INSTALL_DIR"
 mkdir -p "$ANKI_INSTALL_DIR"
-curl -sL -o "$WORKDIR/anki.tar.zst" \
+curl -sL --proto "=https" -o "$WORKDIR/anki.tar.zst" \
   "https://github.com/ankitects/anki/releases/download/${ANKI_VERSION}/anki-${ANKI_VERSION}-linux-x86_64.tar.zst"
 tar --zstd -xf "$WORKDIR/anki.tar.zst" -C "$ANKI_INSTALL_DIR" --strip-components=1
 rm "$WORKDIR/anki.tar.zst"

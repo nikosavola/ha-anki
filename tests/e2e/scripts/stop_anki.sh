@@ -6,7 +6,7 @@ cd "$(dirname "${BASH_SOURCE[0]}")"
 source ./env.sh
 
 for pid_file in "$ANKI_PID_FILE" "$XVFB_PID_FILE"; do
-  if [ -f "$pid_file" ]; then
+  if [[ -f "$pid_file" ]]; then
     kill "$(cat "$pid_file")" 2>/dev/null || true
     rm -f "$pid_file"
   fi

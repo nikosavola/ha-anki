@@ -42,7 +42,7 @@ github = ["pytest-github-actions-annotate-failures>=0.4.2"]
 ignore-words-list = "hass"
 
 [tool.coverage.run]
-source = ["custom_components/ankiconnect"]
+source = ["custom_components/ha_anki"]
 
 [tool.coverage.report]
 exclude_also = ["if TYPE_CHECKING:"]

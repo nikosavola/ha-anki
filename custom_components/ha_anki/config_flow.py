@@ -1,4 +1,4 @@
-"""Config flow for the AnkiConnect integration."""
+"""Config flow for the ha-anki integration."""
 
 from __future__ import annotations
 
@@ -39,7 +39,7 @@ STEP_USER_DATA_SCHEMA = vol.Schema({
 
 
 class AnkiConnectConfigFlow(ConfigFlow, domain=DOMAIN):
-    """Handle a config flow for AnkiConnect."""
+    """Handle a config flow for ha-anki."""
 
     VERSION = 1
 

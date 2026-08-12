@@ -1,1 +1,1 @@
-"""Tests for the AnkiConnect integration."""
+"""Tests for the ha-anki integration."""

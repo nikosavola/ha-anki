@@ -7,12 +7,12 @@ from homeassistant.core import HomeAssistant
 import pytest
 from pytest_homeassistant_custom_component.test_util.aiohttp import AiohttpClientMocker
 
-from custom_components.ankiconnect.api import (
+from custom_components.ha_anki.api import (
     AnkiConnectApiError,
     AnkiConnectClient,
     AnkiConnectConnectionError,
 )
-from custom_components.ankiconnect.const import CARD_QUERIES
+from custom_components.ha_anki.const import CARD_QUERIES
 
 from .conftest import TEST_HOST, TEST_PORT, TEST_URL, AnkiConnectResponder
 

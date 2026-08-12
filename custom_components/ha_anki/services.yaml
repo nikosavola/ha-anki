@@ -1,7 +1,7 @@
 sync:
   target:
     entity:
-      integration: ankiconnect
+      integration: ha_anki
       domain: sensor
 add_note:
   fields:
@@ -9,7 +9,7 @@ add_note:
       required: true
       selector:
         config_entry:
-          integration: ankiconnect
+          integration: ha_anki
     deck_name:
       required: true
       example: "Default"

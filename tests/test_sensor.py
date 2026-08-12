@@ -1,4 +1,4 @@
-"""Tests for the AnkiConnect sensor platform and entry setup."""
+"""Tests for the ha-anki sensor platform and entry setup."""
 
 from homeassistant.config_entries import ConfigEntryState
 from homeassistant.const import ATTR_ENTITY_ID, CONF_NAME
@@ -11,7 +11,7 @@ from pytest_homeassistant_custom_component.common import (
     async_fire_time_changed,
 )
 
-from custom_components.ankiconnect.const import (
+from custom_components.ha_anki.const import (
     CONF_CUSTOM_QUERIES,
     CONF_QUERY,
     DOMAIN,

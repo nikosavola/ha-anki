@@ -1,8 +1,8 @@
-"""Constants for the AnkiConnect integration."""
+"""Constants for the ha-anki integration."""
 
 from datetime import timedelta
 
-DOMAIN = "ankiconnect"
+DOMAIN = "ha_anki"
 
 DEFAULT_PORT = 8765
 

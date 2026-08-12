@@ -1,4 +1,4 @@
-"""Tests for the ankiconnect.add_note domain service."""
+"""Tests for the ha_anki.add_note domain service."""
 
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import HomeAssistantError, ServiceValidationError
@@ -6,7 +6,7 @@ from homeassistant.helpers import entity_registry as er
 import pytest
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
-from custom_components.ankiconnect.const import ADD_NOTE_SERVICE, DOMAIN
+from custom_components.ha_anki.const import ADD_NOTE_SERVICE, DOMAIN
 
 from .conftest import AnkiConnectResponder
 

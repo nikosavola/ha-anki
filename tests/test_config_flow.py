@@ -1,4 +1,4 @@
-"""Tests for the AnkiConnect config flow."""
+"""Tests for the ha-anki config flow."""
 
 import aiohttp
 from homeassistant.config_entries import SOURCE_USER
@@ -8,7 +8,7 @@ from homeassistant.data_entry_flow import FlowResultType
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 from pytest_homeassistant_custom_component.test_util.aiohttp import AiohttpClientMocker
 
-from custom_components.ankiconnect.const import CONF_CUSTOM_QUERIES, CONF_QUERY, DOMAIN
+from custom_components.ha_anki.const import CONF_CUSTOM_QUERIES, CONF_QUERY, DOMAIN
 
 from .conftest import TEST_HOST, TEST_PORT, TEST_URL, AnkiConnectResponder
 

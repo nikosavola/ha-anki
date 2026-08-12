@@ -10,8 +10,8 @@ from collections.abc import AsyncGenerator
 import aiohttp
 import pytest
 
-from custom_components.ankiconnect.api import AnkiConnectClient
-from custom_components.ankiconnect.const import CARD_QUERIES
+from custom_components.ha_anki.api import AnkiConnectClient
+from custom_components.ha_anki.const import CARD_QUERIES
 
 from .conftest import E2E_HOST, E2E_PORT, EXPECTED_COUNTS
 

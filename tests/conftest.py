@@ -12,7 +12,7 @@ from pytest_homeassistant_custom_component.test_util.aiohttp import (
     AiohttpClientMockResponse,
 )
 
-from custom_components.ankiconnect.const import DOMAIN
+from custom_components.ha_anki.const import DOMAIN
 
 TEST_HOST = "192.168.1.10"
 TEST_PORT = 8765

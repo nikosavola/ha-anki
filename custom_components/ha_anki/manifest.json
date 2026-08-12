@@ -1,6 +1,6 @@
 {
-  "domain": "ankiconnect",
-  "name": "AnkiConnect",
+  "domain": "ha_anki",
+  "name": "ha-anki",
   "codeowners": ["@nikosavola"],
   "config_flow": true,
   "documentation": "https://github.com/nikosavola/ha-anki",

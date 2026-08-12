@@ -1,4 +1,4 @@
-"""Sensor platform for the AnkiConnect integration."""
+"""Sensor platform for the ha-anki integration."""
 
 from __future__ import annotations
 

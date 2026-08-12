@@ -10,7 +10,7 @@ from homeassistant.helpers import entity_registry as er
 import pytest
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
-from custom_components.ankiconnect.const import DOMAIN
+from custom_components.ha_anki.const import DOMAIN
 
 from .conftest import E2E_HOST, E2E_PORT, EXPECTED_COUNTS
 

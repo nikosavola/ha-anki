@@ -1,4 +1,4 @@
-"""DataUpdateCoordinator for the AnkiConnect integration."""
+"""DataUpdateCoordinator for the ha-anki integration."""
 
 from __future__ import annotations
 

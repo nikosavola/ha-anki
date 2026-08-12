@@ -9,6 +9,9 @@ step: `uv run` creates and syncs `.venv` from `pyproject.toml` on demand.
 uv run --dev pytest
 ```
 
+The commands below are also available as [`just`](https://github.com/casey/just)
+recipes; run `just --list` to see them all.
+
 ## Linting, formatting and type checking
 
 Ruff and pyrefly aren't project dependencies; they run through

@@ -1,0 +1,38 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Connect to AnkiConnect",
+        "description": "Enter the address of the machine running Anki with the AnkiConnect add-on installed.",
+        "data": {
+          "host": "Host",
+          "port": "Port"
+        },
+        "data_description": {
+          "host": "The IP address or hostname of the machine running Anki.",
+          "port": "The port AnkiConnect is listening on."
+        }
+      }
+    },
+    "error": {
+      "cannot_connect": "Failed to connect to AnkiConnect. Check the host and port, and make sure Anki is running with the AnkiConnect add-on installed.",
+      "unknown": "Unexpected error"
+    },
+    "abort": {
+      "already_configured": "This AnkiConnect instance is already configured."
+    }
+  },
+  "entity": {
+    "sensor": {
+      "cards_due": {
+        "name": "Cards due"
+      },
+      "new_cards": {
+        "name": "New cards"
+      },
+      "review_cards": {
+        "name": "Review cards"
+      }
+    }
+  }
+}

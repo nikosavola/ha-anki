@@ -1,0 +1,46 @@
+name: E2E
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  e2e:
+    name: Real Anki + AnkiConnect
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9  # v9.0.0
+
+      - name: Install Anki and AnkiConnect
+        run: tests/e2e/scripts/install_anki.sh
+
+      - name: Bootstrap a fresh Anki profile
+        run: tests/e2e/scripts/bootstrap_profile.sh
+
+      - name: Install the AnkiConnect add-on into the profile
+        run: tests/e2e/scripts/install_ankiconnect.sh
+
+      - name: Seed a test collection
+        run: tests/e2e/scripts/seed_collection.sh
+
+      - name: Start Anki with AnkiConnect
+        run: tests/e2e/scripts/start_anki.sh
+
+      - name: Run E2E tests
+        run: uv run --dev --group github pytest tests/e2e --run-e2e -v
+
+      - name: Show Anki log
+        if: failure()
+        run: cat "${RUNNER_TEMP}/ha-anki-e2e/anki.log" || true
+
+      - name: Stop Anki
+        if: always()
+        run: tests/e2e/scripts/stop_anki.sh

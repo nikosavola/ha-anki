@@ -31,11 +31,11 @@ xdotool key alt+y
 
 echo "Waiting for the profile to initialize..."
 for _ in $(seq 1 30); do
-  [ -f "$ANKI_COLLECTION" ] && break
+  [[ -f "$ANKI_COLLECTION" ]] && break
   sleep 1
 done
 
-if [ ! -f "$ANKI_COLLECTION" ]; then
+if [[ ! -f "$ANKI_COLLECTION" ]]; then
   echo "collection.anki2 never appeared; Anki log:" >&2
   cat "$ANKI_LOG" >&2
   kill "$anki_pid" "$xvfb_pid" 2>/dev/null || true

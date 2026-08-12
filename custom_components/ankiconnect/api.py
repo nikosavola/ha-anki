@@ -2,13 +2,17 @@
 
 from __future__ import annotations
 
+from collections.abc import Set as AbstractSet
+import logging
 from typing import Any
 
 import aiohttp
 
-from .const import ANKICONNECT_API_VERSION, REVIEWED_TODAY_KEY
+from .const import ANKICONNECT_API_VERSION, CUSTOM_QUERY_KEY_PREFIX, REVIEWED_TODAY_KEY
 
 REQUEST_TIMEOUT = aiohttp.ClientTimeout(total=10)
+
+_LOGGER = logging.getLogger(__name__)
 
 
 class AnkiConnectError(Exception):
@@ -78,17 +82,35 @@ class AnkiConnectClient:
         """
         await self._request("sync")
 
-    async def get_sensor_data(self, queries: dict[str, str]) -> dict[str, int]:
+    async def count_cards(self, query: str) -> int:
+        """Return the number of cards matching a search query.
+
+        Errors propagate from `_request` as AnkiConnectError, e.g. for
+        invalid search syntax.
+
+        Returns:
+            The number of matching cards.
+
+        """
+        card_ids = await self._request("findCards", {"query": query})
+        return len(card_ids)
+
+    async def get_sensor_data(self, queries: dict[str, str]) -> dict[str, int | None]:
         """Return the card count for each named query, plus today's review count.
 
         Batched into one "multi" request, so polling costs a single HTTP round
-        trip regardless of how many sensors are configured. Errors propagate
-        from `_multi` as AnkiConnectError.
+        trip regardless of how many sensors are configured. A failing
+        user-defined custom query (keyed with CUSTOM_QUERY_KEY_PREFIX) doesn't
+        fail the whole batch, since it can't have been validated at add-query
+        time against an Anki/AnkiConnect version change; it maps to None
+        instead. The four built-in queries are hardcoded and can't fail on
+        syntax, so an error there still propagates as AnkiConnectError, same
+        as a whole-batch or connection failure.
 
         Returns:
             A mapping from each input key in `queries` to its matching card
-            count, plus a "reviewed_today" key for the number of cards
-            reviewed today.
+            count (or None for a custom query AnkiConnect rejected), plus a
+            "reviewed_today" key for the number of cards reviewed today.
 
         """
         names = [*queries, REVIEWED_TODAY_KEY]
@@ -104,22 +126,39 @@ class AnkiConnectClient:
             "action": "getNumCardsReviewedToday",
             "version": ANKICONNECT_API_VERSION,
         })
+        tolerant_indices = {
+            index
+            for index, name in enumerate(names)
+            if name.startswith(CUSTOM_QUERY_KEY_PREFIX)
+        }
 
-        results = await self._multi(actions)
-        data: dict[str, int] = {}
+        results = await self._multi(actions, tolerant_indices)
+        data: dict[str, int | None] = {}
         for name, value in zip(names, results, strict=True):
-            data[name] = value if name == REVIEWED_TODAY_KEY else len(value)
+            if value is None:
+                data[name] = None
+            else:
+                data[name] = value if name == REVIEWED_TODAY_KEY else len(value)
         return data
 
-    async def _multi(self, actions: list[dict[str, Any]]) -> list[Any]:
+    async def _multi(
+        self,
+        actions: list[dict[str, Any]],
+        tolerant_indices: AbstractSet[int] = frozenset(),
+    ) -> list[Any]:
         """Send a batch of actions via AnkiConnect's "multi" action.
 
+        A sub-action whose index is in `tolerant_indices` yields None instead
+        of raising when it errors; every other sub-action, and the request as
+        a whole, still raises.
+
         Returns:
-            The "result" value of each sub-action, in the same order.
+            The "result" value of each sub-action (or None for a tolerated
+            error), in the same order.
 
         Raises:
             AnkiConnectApiError: If AnkiConnect reports an error for the
-                overall request or for any individual sub-action.
+                overall request or for a non-tolerated sub-action.
             AnkiConnectConnectionError: If AnkiConnect can't be reached, or
                 replies with an unexpected response shape.
 
@@ -131,12 +170,17 @@ class AnkiConnectClient:
             )
 
         values: list[Any] = []
-        for sub_result in results:
+        for index, sub_result in enumerate(results):
             if not isinstance(sub_result, dict):
                 raise AnkiConnectConnectionError(
                     f"Unexpected sub-result shape: {sub_result!r}"
                 )
-            if sub_result.get("error") is not None:
-                raise AnkiConnectApiError(sub_result["error"])
+            error = sub_result.get("error")
+            if error is not None:
+                if index in tolerant_indices:
+                    _LOGGER.warning("AnkiConnect action failed, ignoring: %s", error)
+                    values.append(None)
+                    continue
+                raise AnkiConnectApiError(error)
             values.append(sub_result["result"])
         return values

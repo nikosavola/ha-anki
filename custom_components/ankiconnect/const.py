@@ -23,4 +23,13 @@ REVIEWED_TODAY_KEY = "reviewed_today"
 # All sensor keys, in the order entities are created.
 SENSOR_KEYS = (*CARD_QUERIES, REVIEWED_TODAY_KEY)
 
+# Prefix for user-defined query sensor keys, so they can never collide with
+# the fixed SENSOR_KEYS namespace above.
+CUSTOM_QUERY_KEY_PREFIX = "custom_"
+
+# entry.options key holding user-defined queries, keyed by slug:
+# {slug: {CONF_NAME: str, CONF_QUERY: str}}.
+CONF_CUSTOM_QUERIES = "custom_queries"
+CONF_QUERY = "query"
+
 SYNC_SERVICE = "sync"

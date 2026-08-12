@@ -22,6 +22,42 @@
       "already_configured": "This AnkiConnect instance is already configured."
     }
   },
+  "options": {
+    "step": {
+      "init": {
+        "menu_options": {
+          "add_query": "Add a custom query",
+          "remove_query": "Remove a custom query"
+        }
+      },
+      "add_query": {
+        "title": "Add a custom query",
+        "description": "Create a sensor from any AnkiConnect search query, such as one scoped to a specific deck or tag.",
+        "data": {
+          "name": "Name",
+          "query": "Query"
+        },
+        "data_description": {
+          "name": "Shown as the sensor's name.",
+          "query": "An Anki search query, like `deck:Spanish is:due`."
+        }
+      },
+      "remove_query": {
+        "title": "Remove a custom query",
+        "data": {
+          "custom_queries": "Queries to remove"
+        }
+      }
+    },
+    "error": {
+      "invalid_name": "Enter a name that contains at least one letter or number.",
+      "name_exists": "A sensor with this name already exists.",
+      "empty_query": "Enter a search query.",
+      "invalid_query": "AnkiConnect rejected this search query. Check the syntax and try again.",
+      "cannot_connect": "Failed to connect to AnkiConnect. Check that Anki is still running.",
+      "unknown": "Unexpected error"
+    }
+  },
   "entity": {
     "sensor": {
       "cards_due": {

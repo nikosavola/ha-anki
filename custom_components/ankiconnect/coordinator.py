@@ -9,14 +9,21 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 
 from .api import AnkiConnectClient, AnkiConnectError
-from .const import CARD_QUERIES, DOMAIN, UPDATE_INTERVAL
+from .const import (
+    CARD_QUERIES,
+    CONF_CUSTOM_QUERIES,
+    CONF_QUERY,
+    CUSTOM_QUERY_KEY_PREFIX,
+    DOMAIN,
+    UPDATE_INTERVAL,
+)
 
 _LOGGER = logging.getLogger(__name__)
 
 type AnkiConnectConfigEntry = ConfigEntry[AnkiConnectDataUpdateCoordinator]
 
 
-class AnkiConnectDataUpdateCoordinator(DataUpdateCoordinator[dict[str, int]]):
+class AnkiConnectDataUpdateCoordinator(DataUpdateCoordinator[dict[str, int | None]]):
     """Poll AnkiConnect for card counts, shared by all sensors of one entry."""
 
     config_entry: AnkiConnectConfigEntry
@@ -37,9 +44,17 @@ class AnkiConnectDataUpdateCoordinator(DataUpdateCoordinator[dict[str, int]]):
         )
         self.client = client
 
-    async def _async_update_data(self) -> dict[str, int]:
-        """Fetch all sensor data in one batched request."""
+    async def _async_update_data(self) -> dict[str, int | None]:
+        """Fetch all sensor data, built-in and user-defined, in one batched request."""
+        custom_queries = self.config_entry.options.get(CONF_CUSTOM_QUERIES, {})
+        queries = {
+            **CARD_QUERIES,
+            **{
+                f"{CUSTOM_QUERY_KEY_PREFIX}{slug}": data[CONF_QUERY]
+                for slug, data in custom_queries.items()
+            },
+        }
         try:
-            return await self.client.get_sensor_data(CARD_QUERIES)
+            return await self.client.get_sensor_data(queries)
         except AnkiConnectError as err:
             raise UpdateFailed(f"Error communicating with AnkiConnect: {err}") from err

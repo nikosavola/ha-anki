@@ -117,6 +117,12 @@ class AnkiConnectResponder:
             body = {"result": None, "error": self._sync_error}
         elif action == "multi":
             body = self._multi_body(data["params"]["actions"])
+        elif action == "findCards":
+            query = data["params"]["query"]
+            if query in self._query_errors:
+                body = {"result": None, "error": self._query_errors[query]}
+            else:
+                body = {"result": self._cards_by_query.get(query, []), "error": None}
         else:
             raise AssertionError(f"Unexpected AnkiConnect action in test: {action}")
         return AiohttpClientMockResponse(method, url, json=body)

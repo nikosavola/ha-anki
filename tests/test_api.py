@@ -101,6 +101,41 @@ async def test_get_sensor_data_raises_on_query_error(
         await client.get_sensor_data(CARD_QUERIES)
 
 
+async def test_get_sensor_data_tolerates_custom_query_error(
+    client: AnkiConnectClient, anki_responder: AnkiConnectResponder
+) -> None:
+    """A failing custom_-prefixed query maps to None, without failing the batch."""
+    anki_responder.set_cards("is:due", [1, 2])
+    anki_responder.set_query_error("not a real query", "invalid search")
+
+    data = await client.get_sensor_data({
+        **CARD_QUERIES,
+        "custom_bad": "not a real query",
+    })
+
+    assert data["cards_due"] == 2
+    assert data["custom_bad"] is None
+
+
+async def test_count_cards(
+    client: AnkiConnectClient, anki_responder: AnkiConnectResponder
+) -> None:
+    """count_cards returns the number of matching card IDs."""
+    anki_responder.set_cards("deck:Spanish is:due", [1, 2, 3])
+
+    assert await client.count_cards("deck:Spanish is:due") == 3
+
+
+async def test_count_cards_raises_on_error(
+    client: AnkiConnectClient, anki_responder: AnkiConnectResponder
+) -> None:
+    """An invalid search query raises AnkiConnectApiError."""
+    anki_responder.set_query_error("not a real query", "invalid search")
+
+    with pytest.raises(AnkiConnectApiError, match="invalid search"):
+        await client.count_cards("not a real query")
+
+
 async def test_sync(
     client: AnkiConnectClient, anki_responder: AnkiConnectResponder
 ) -> None:

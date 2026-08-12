@@ -1,7 +1,7 @@
 """Tests for the AnkiConnect sensor platform and entry setup."""
 
 from homeassistant.config_entries import ConfigEntryState
-from homeassistant.const import ATTR_ENTITY_ID
+from homeassistant.const import ATTR_ENTITY_ID, CONF_NAME
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers import entity_registry as er
@@ -11,7 +11,13 @@ from pytest_homeassistant_custom_component.common import (
     async_fire_time_changed,
 )
 
-from custom_components.ankiconnect.const import DOMAIN, SYNC_SERVICE, UPDATE_INTERVAL
+from custom_components.ankiconnect.const import (
+    CONF_CUSTOM_QUERIES,
+    CONF_QUERY,
+    DOMAIN,
+    SYNC_SERVICE,
+    UPDATE_INTERVAL,
+)
 
 from .conftest import AnkiConnectResponder
 
@@ -180,3 +186,90 @@ async def test_sync_service_raises_on_error(
         await hass.services.async_call(
             DOMAIN, SYNC_SERVICE, {ATTR_ENTITY_ID: entity_id}, blocking=True
         )
+
+
+async def test_custom_query_sensor_is_created(
+    hass: HomeAssistant,
+    anki_responder: AnkiConnectResponder,
+    mock_config_entry: MockConfigEntry,
+) -> None:
+    """A custom query in entry.options gets its own sensor, named and reporting."""
+    mock_config_entry.add_to_hass(hass)
+    hass.config_entries.async_update_entry(
+        mock_config_entry,
+        options={
+            CONF_CUSTOM_QUERIES: {
+                "spanish_due": {
+                    CONF_NAME: "Spanish due",
+                    CONF_QUERY: "deck:Spanish is:due",
+                }
+            }
+        },
+    )
+    anki_responder.set_cards("deck:Spanish is:due", [1, 2, 3])
+
+    assert await hass.config_entries.async_setup(mock_config_entry.entry_id)
+    await hass.async_block_till_done()
+
+    entity_id = _maybe_entity_id(hass, mock_config_entry, "custom_spanish_due")
+    assert entity_id is not None
+    state = hass.states.get(entity_id)
+    assert state is not None
+    assert state.state == "3"
+    assert state.attributes["friendly_name"] == "Anki (192.168.1.10) Spanish due"
+
+
+async def test_removed_custom_query_prunes_stale_entity(
+    hass: HomeAssistant,
+    anki_responder: AnkiConnectResponder,
+    mock_config_entry: MockConfigEntry,
+) -> None:
+    """Removing a custom query from options removes its registry entry on reload."""
+    mock_config_entry.add_to_hass(hass)
+    hass.config_entries.async_update_entry(
+        mock_config_entry,
+        options={
+            CONF_CUSTOM_QUERIES: {
+                "spanish_due": {
+                    CONF_NAME: "Spanish due",
+                    CONF_QUERY: "deck:Spanish is:due",
+                }
+            }
+        },
+    )
+    anki_responder.set_cards("deck:Spanish is:due", [1])
+    assert await hass.config_entries.async_setup(mock_config_entry.entry_id)
+    await hass.async_block_till_done()
+    assert _maybe_entity_id(hass, mock_config_entry, "custom_spanish_due") is not None
+
+    hass.config_entries.async_update_entry(
+        mock_config_entry, options={CONF_CUSTOM_QUERIES: {}}
+    )
+    await hass.async_block_till_done()
+
+    assert _maybe_entity_id(hass, mock_config_entry, "custom_spanish_due") is None
+
+
+async def test_failing_custom_query_does_not_affect_builtin_sensors(
+    hass: HomeAssistant,
+    anki_responder: AnkiConnectResponder,
+    mock_config_entry: MockConfigEntry,
+) -> None:
+    """A custom query AnkiConnect rejects goes unknown, without affecting the rest."""
+    mock_config_entry.add_to_hass(hass)
+    hass.config_entries.async_update_entry(
+        mock_config_entry,
+        options={
+            CONF_CUSTOM_QUERIES: {
+                "bad": {CONF_NAME: "Bad", CONF_QUERY: "not a real query"}
+            }
+        },
+    )
+    anki_responder.set_cards("is:due", [1, 2])
+    anki_responder.set_query_error("not a real query", "invalid search")
+
+    assert await hass.config_entries.async_setup(mock_config_entry.entry_id)
+    await hass.async_block_till_done()
+
+    assert _state(hass, mock_config_entry, "cards_due") == "2"
+    assert _state(hass, mock_config_entry, "custom_bad") == "unknown"

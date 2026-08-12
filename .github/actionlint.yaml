@@ -1,0 +1,7 @@
+paths:
+  .github/workflows/test.yml:
+    ignore:
+      # actionlint v1.7.12 predates step-level parallelism (the `parallel:` step
+      # grouping, shipped 2026-06-25), so it rejects the syntax.
+      # Drop this once rhysd/actionlint#693 ships.
+      - 'step must run script with "run" section or run action with "uses" section'

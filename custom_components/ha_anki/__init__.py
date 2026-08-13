@@ -115,7 +115,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: AnkiConnectConfigEntry) 
 async def _async_update_listener(
     hass: HomeAssistant, entry: AnkiConnectConfigEntry
 ) -> None:
-    """Reload the entry when its options (custom queries) change."""
+    """Reload the entry when its options (scan interval, custom queries) change."""
     await hass.config_entries.async_reload(entry.entry_id)
 
 

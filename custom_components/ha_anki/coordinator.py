@@ -19,10 +19,11 @@ from .const import (
     CONF_QUERY,
     CUSTOM_QUERY_KEY_PREFIX,
     DOMAIN,
-    MAX_SCAN_INTERVAL_MINUTES,
+    MAX_INTERVAL_MINUTES,
     MIN_SCAN_INTERVAL_MINUTES,
     UPDATE_INTERVAL,
 )
+from .util import resolve_minutes_option
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -30,30 +31,14 @@ type AnkiConnectConfigEntry = ConfigEntry[AnkiConnectDataUpdateCoordinator]
 
 
 def _resolve_update_interval(options: Mapping[str, Any]) -> timedelta:
-    """Turn the options-configured scan interval into a timedelta.
-
-    Falls back to UPDATE_INTERVAL for a missing, non-integer, or out-of-range
-    value rather than raising, since the options flow already enforces the
-    valid range and this guards only against options edited outside of it
-    (e.g. directly in storage) causing a setup crash or a runaway poll loop.
-
-    Returns:
-        The interval to poll AnkiConnect on.
-
-    """
-    minutes = options.get(CONF_SCAN_INTERVAL)
-    if (
-        not isinstance(minutes, int)
-        or isinstance(minutes, bool)
-        or not MIN_SCAN_INTERVAL_MINUTES <= minutes <= MAX_SCAN_INTERVAL_MINUTES
-    ):
-        if minutes is not None:
-            _LOGGER.warning(
-                "Ignoring invalid %s option %r, using the default",
-                CONF_SCAN_INTERVAL,
-                minutes,
-            )
-        return UPDATE_INTERVAL
+    """Turn the options-configured scan interval into a timedelta."""
+    minutes = resolve_minutes_option(
+        options,
+        CONF_SCAN_INTERVAL,
+        minimum=MIN_SCAN_INTERVAL_MINUTES,
+        maximum=MAX_INTERVAL_MINUTES,
+        default=int(UPDATE_INTERVAL.total_seconds() // 60),
+    )
     return timedelta(minutes=minutes)
 
 

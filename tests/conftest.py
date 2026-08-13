@@ -79,6 +79,7 @@ class AnkiConnectResponder:
         self._add_note_result: int | None = 12345
         self._add_note_error: str | None = None
         self.add_note_call_count = 0
+        self.sync_call_count = 0
         aioclient_mock.post(TEST_URL, side_effect=self._respond)
 
     def set_version_error(self, error: str) -> None:
@@ -121,6 +122,7 @@ class AnkiConnectResponder:
                 else {"result": self._version, "error": None}
             )
         elif action == "sync":
+            self.sync_call_count += 1
             body = {"result": None, "error": self._sync_error}
         elif action == "multi":
             body = self._multi_body(data["params"]["actions"])

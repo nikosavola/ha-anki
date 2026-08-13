@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+from datetime import datetime, timedelta
+import logging
+
 from homeassistant.config_entries import ConfigEntryState
 from homeassistant.const import CONF_HOST, CONF_PORT, Platform
 from homeassistant.core import (
@@ -13,6 +16,7 @@ from homeassistant.core import (
 from homeassistant.exceptions import HomeAssistantError, ServiceValidationError
 from homeassistant.helpers import config_validation as cv
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
+from homeassistant.helpers.event import async_track_time_interval
 from homeassistant.helpers.typing import ConfigType, VolDictType
 import voluptuous as vol
 
@@ -24,10 +28,16 @@ from .const import (
     ATTR_FIELDS,
     ATTR_MODEL_NAME,
     ATTR_TAGS,
+    CONF_AUTO_SYNC_INTERVAL,
     CONF_CONFIG_ENTRY_ID,
     DOMAIN,
+    MAX_INTERVAL_MINUTES,
+    MIN_AUTO_SYNC_INTERVAL_MINUTES,
 )
 from .coordinator import AnkiConnectConfigEntry, AnkiConnectDataUpdateCoordinator
+from .util import resolve_minutes_option
+
+_LOGGER = logging.getLogger(__name__)
 
 PLATFORMS = [Platform.SENSOR]
 
@@ -109,13 +119,52 @@ async def async_setup_entry(hass: HomeAssistant, entry: AnkiConnectConfigEntry) 
     entry.runtime_data = coordinator
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
     entry.async_on_unload(entry.add_update_listener(_async_update_listener))
+    _async_schedule_auto_sync(hass, entry)
     return True
+
+
+def _async_schedule_auto_sync(
+    hass: HomeAssistant, entry: AnkiConnectConfigEntry
+) -> None:
+    """Schedule a periodic AnkiConnect sync if entry.options requests one.
+
+    A 0 (or missing) auto_sync_interval option means auto-sync is off, not a
+    zero-length interval: the user calls the sync service themselves.
+    """
+    minutes = resolve_minutes_option(
+        entry.options,
+        CONF_AUTO_SYNC_INTERVAL,
+        minimum=MIN_AUTO_SYNC_INTERVAL_MINUTES,
+        maximum=MAX_INTERVAL_MINUTES,
+        default=MIN_AUTO_SYNC_INTERVAL_MINUTES,
+    )
+    if minutes <= 0:
+        return
+
+    coordinator = entry.runtime_data
+
+    async def _async_auto_sync(_now: datetime) -> None:
+        """Trigger a sync, then refresh sensor state, logging rather than raising.
+
+        There's no caller here to surface a HomeAssistantError to, unlike the
+        sync service's async_sync in sensor.py.
+        """
+        try:
+            await coordinator.client.sync()
+        except AnkiConnectError as err:
+            _LOGGER.warning("Scheduled AnkiConnect sync failed: %s", err)
+            return
+        await coordinator.async_request_refresh()
+
+    entry.async_on_unload(
+        async_track_time_interval(hass, _async_auto_sync, timedelta(minutes=minutes))
+    )
 
 
 async def _async_update_listener(
     hass: HomeAssistant, entry: AnkiConnectConfigEntry
 ) -> None:
-    """Reload the entry when its options (scan interval, custom queries) change."""
+    """Reload the entry when its options (intervals, custom queries) change."""
     await hass.config_entries.async_reload(entry.entry_id)
 
 

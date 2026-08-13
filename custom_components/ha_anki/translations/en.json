@@ -26,16 +26,20 @@
     "step": {
       "init": {
         "menu_options": {
-          "set_interval": "Change the update interval",
+          "set_interval": "Change the update and sync intervals",
           "add_query": "Add a custom query",
           "remove_query": "Remove a custom query"
         }
       },
       "set_interval": {
-        "title": "Change the update interval",
-        "description": "How often, in minutes, to poll AnkiConnect for card counts.",
+        "title": "Change the update and sync intervals",
+        "description": "How often, in minutes, to poll AnkiConnect for card counts, and optionally trigger a full sync with AnkiWeb.",
         "data": {
-          "scan_interval": "Update interval (minutes)"
+          "scan_interval": "Update interval (minutes)",
+          "auto_sync_interval": "Auto-sync interval (minutes, 0 to disable)"
+        },
+        "data_description": {
+          "auto_sync_interval": "Automatically sync with AnkiWeb on this schedule. Leave at 0 to sync only when you call the sync service yourself."
         }
       },
       "add_query": {

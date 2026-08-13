@@ -142,7 +142,14 @@ def _async_schedule_auto_sync(
         return
 
     coordinator = entry.runtime_data
-    sync_in_progress = False
+    # Keyed by entry_id in hass.data, not just a variable in this closure: a
+    # reload replaces entry.runtime_data and rebuilds this closure, but HA's
+    # unload only waits up to 10s for a still-running job, so a sync slower
+    # than that can outlive the reload. The guard has to survive it too, or
+    # the fresh closure can't tell a leftover sync is still in flight.
+    entry_sync_state = hass.data.setdefault(DOMAIN, {}).setdefault(
+        entry.entry_id, {"sync_in_progress": False}
+    )
     was_failing = False
 
     async def _async_auto_sync(_now: datetime) -> None:
@@ -153,20 +160,20 @@ def _async_schedule_auto_sync(
 
         HA's interval scheduler reschedules the next tick immediately, not
         after this one finishes, so a sync slower than the configured
-        interval would otherwise overlap the next tick; sync_in_progress
+        interval would otherwise overlap the next tick; entry_sync_state
         skips a tick rather than starting a second concurrent sync. Repeated
         failures log once, not once per tick, matching how
         AnkiConnectDataUpdateCoordinator already handles the sibling poll
         failures.
         """
-        nonlocal sync_in_progress, was_failing
-        if sync_in_progress:
+        nonlocal was_failing
+        if entry_sync_state["sync_in_progress"]:
             _LOGGER.debug(
                 "Skipping scheduled AnkiConnect sync: the previous one is still running"
             )
             return
 
-        sync_in_progress = True
+        entry_sync_state["sync_in_progress"] = True
         try:
             await coordinator.client.sync()
         except AnkiConnectError as err:
@@ -175,7 +182,7 @@ def _async_schedule_auto_sync(
                 was_failing = True
             return
         finally:
-            sync_in_progress = False
+            entry_sync_state["sync_in_progress"] = False
 
         if was_failing:
             _LOGGER.info("Scheduled AnkiConnect sync recovered")

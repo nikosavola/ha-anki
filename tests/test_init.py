@@ -495,3 +495,44 @@ async def test_auto_sync_skips_overlapping_run(
     release.set()
     await hass.async_block_till_done()
     assert call_count == 1
+
+
+async def test_auto_sync_guard_persists_across_reload(
+    hass: HomeAssistant,
+    anki_responder: AnkiConnectResponder,
+    mock_config_entry: MockConfigEntry,
+    freezer,
+) -> None:
+    """A sync marked in-flight from before a reload still blocks the new schedule.
+
+    A reload replaces entry.runtime_data and rebuilds the auto-sync closure,
+    but HA's unload only waits up to 10s for a still-running job, so a sync
+    slower than that can outlive the reload. The in-flight guard is keyed by
+    entry_id in hass.data for exactly this reason: a guard scoped to just the
+    closure it was created in would miss a leftover sync entirely.
+    """
+    mock_config_entry.add_to_hass(hass)
+    hass.config_entries.async_update_entry(
+        mock_config_entry, options={CONF_AUTO_SYNC_INTERVAL: 1}
+    )
+    assert await hass.config_entries.async_setup(mock_config_entry.entry_id)
+    await hass.async_block_till_done()
+
+    # Simulate a sync from before the reload that's still stuck in flight.
+    hass.data[DOMAIN][mock_config_entry.entry_id]["sync_in_progress"] = True
+
+    assert await hass.config_entries.async_reload(mock_config_entry.entry_id)
+    await hass.async_block_till_done()
+
+    freezer.tick(timedelta(minutes=1))
+    async_fire_time_changed(hass)
+    await hass.async_block_till_done()
+    assert anki_responder.sync_call_count == 0, (
+        "the reloaded entry's schedule must still see the flag as in-flight"
+    )
+
+    hass.data[DOMAIN][mock_config_entry.entry_id]["sync_in_progress"] = False
+    freezer.tick(timedelta(minutes=1))
+    async_fire_time_changed(hass)
+    await hass.async_block_till_done()
+    assert anki_responder.sync_call_count == 1

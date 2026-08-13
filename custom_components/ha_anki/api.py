@@ -12,6 +12,10 @@ from .const import ANKICONNECT_API_VERSION, CUSTOM_QUERY_KEY_PREFIX, REVIEWED_TO
 
 REQUEST_TIMEOUT = aiohttp.ClientTimeout(total=10)
 
+# A real AnkiWeb sync (especially with media, or a large collection) routinely
+# takes longer than REQUEST_TIMEOUT; sync() overrides it with this instead.
+SYNC_REQUEST_TIMEOUT = aiohttp.ClientTimeout(total=300)
+
 _LOGGER = logging.getLogger(__name__)
 
 
@@ -35,7 +39,13 @@ class AnkiConnectClient:
         self._session = session
         self._url = f"http://{host}:{port}"
 
-    async def _request(self, action: str, params: dict[str, Any] | None = None) -> Any:
+    async def _request(
+        self,
+        action: str,
+        params: dict[str, Any] | None = None,
+        *,
+        request_timeout: aiohttp.ClientTimeout = REQUEST_TIMEOUT,
+    ) -> Any:
         """Send a single action request and return its result, raising on error.
 
         AnkiConnect replies with HTTP 200 even for application-level failures;
@@ -56,7 +66,7 @@ class AnkiConnectClient:
 
         try:
             async with self._session.post(
-                self._url, json=payload, timeout=REQUEST_TIMEOUT
+                self._url, json=payload, timeout=request_timeout
             ) as response:
                 response.raise_for_status()
                 # content_type=None: AnkiConnect doesn't set a JSON content type.
@@ -77,10 +87,15 @@ class AnkiConnectClient:
     async def sync(self) -> None:
         """Trigger AnkiConnect's own sync with AnkiWeb.
 
+        Uses SYNC_REQUEST_TIMEOUT rather than the default: assumes AnkiConnect
+        doesn't respond until the AnkiWeb sync itself has finished, which
+        matches its observed behavior but isn't documented by AnkiConnect
+        itself.
+
         Errors (AnkiConnect unreachable, no AnkiWeb account configured, ...)
         propagate from `_request` as AnkiConnectError.
         """
-        await self._request("sync")
+        await self._request("sync", request_timeout=SYNC_REQUEST_TIMEOUT)
 
     async def count_cards(self, query: str) -> int:
         """Return the number of cards matching a search query.

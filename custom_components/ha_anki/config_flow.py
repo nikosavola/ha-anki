@@ -11,7 +11,7 @@ from homeassistant.config_entries import (
     ConfigFlowResult,
     OptionsFlow,
 )
-from homeassistant.const import CONF_HOST, CONF_NAME, CONF_PORT
+from homeassistant.const import CONF_HOST, CONF_NAME, CONF_PORT, CONF_SCAN_INTERVAL
 from homeassistant.core import callback
 from homeassistant.helpers import config_validation as cv
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
@@ -25,7 +25,10 @@ from .const import (
     CONF_QUERY,
     DEFAULT_PORT,
     DOMAIN,
+    MAX_SCAN_INTERVAL_MINUTES,
+    MIN_SCAN_INTERVAL_MINUTES,
     REVIEWED_TODAY_KEY,
+    UPDATE_INTERVAL,
 )
 
 _LOGGER = logging.getLogger(__name__)
@@ -114,11 +117,39 @@ class AnkiConnectOptionsFlow(OptionsFlow):
     async def async_step_init(
         self, _user_input: dict[str, Any] | None = None
     ) -> ConfigFlowResult:
-        """Show a menu to add or remove a custom query."""
-        menu_options = ["add_query"]
+        """Show a menu to change the scan interval, or add/remove a custom query."""
+        menu_options = ["set_interval", "add_query"]
         if self.config_entry.options.get(CONF_CUSTOM_QUERIES):
             menu_options.append("remove_query")
         return self.async_show_menu(step_id="init", menu_options=menu_options)
+
+    async def async_step_set_interval(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
+        """Ask for how often, in minutes, to poll AnkiConnect."""
+        if user_input is not None:
+            return self.async_create_entry(
+                title="",
+                data={
+                    **self.config_entry.options,
+                    CONF_SCAN_INTERVAL: user_input[CONF_SCAN_INTERVAL],
+                },
+            )
+
+        current = self.config_entry.options.get(
+            CONF_SCAN_INTERVAL, int(UPDATE_INTERVAL.total_seconds() // 60)
+        )
+        return self.async_show_form(
+            step_id="set_interval",
+            data_schema=vol.Schema({
+                vol.Required(CONF_SCAN_INTERVAL, default=current): vol.All(
+                    vol.Coerce(int),
+                    vol.Range(
+                        min=MIN_SCAN_INTERVAL_MINUTES, max=MAX_SCAN_INTERVAL_MINUTES
+                    ),
+                ),
+            }),
+        )
 
     async def async_step_add_query(
         self, user_input: dict[str, Any] | None = None

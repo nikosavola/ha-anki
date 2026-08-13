@@ -26,8 +26,16 @@
     "step": {
       "init": {
         "menu_options": {
+          "set_interval": "Change the update interval",
           "add_query": "Add a custom query",
           "remove_query": "Remove a custom query"
+        }
+      },
+      "set_interval": {
+        "title": "Change the update interval",
+        "description": "How often, in minutes, to poll AnkiConnect for card counts.",
+        "data": {
+          "scan_interval": "Update interval (minutes)"
         }
       },
       "add_query": {

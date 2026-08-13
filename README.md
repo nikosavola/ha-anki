@@ -4,6 +4,7 @@
 [![E2E](https://github.com/nikosavola/ha-anki/actions/workflows/e2e.yml/badge.svg)](https://github.com/nikosavola/ha-anki/actions/workflows/e2e.yml)
 [![Validate](https://github.com/nikosavola/ha-anki/actions/workflows/validate.yml/badge.svg)](https://github.com/nikosavola/ha-anki/actions/workflows/validate.yml)
 [![codecov](https://codecov.io/gh/nikosavola/ha-anki/graph/badge.svg)](https://codecov.io/gh/nikosavola/ha-anki)
+[![Quality gate status](https://sonarcloud.io/api/project_badges/measure?project=nikosavola_ha-anki&metric=alert_status)](https://sonarcloud.io/summary/new_code?id=nikosavola_ha-anki)
 [![License: Apache 2.0](https://img.shields.io/github/license/nikosavola/ha-anki)](LICENSE)
 [![Latest release](https://img.shields.io/github/v/release/nikosavola/ha-anki)](https://github.com/nikosavola/ha-anki/releases)
 

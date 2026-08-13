@@ -8,6 +8,7 @@ import pytest
 from pytest_homeassistant_custom_component.test_util.aiohttp import AiohttpClientMocker
 
 from custom_components.ha_anki.api import (
+    SYNC_REQUEST_TIMEOUT,
     AnkiConnectApiError,
     AnkiConnectClient,
     AnkiConnectConnectionError,
@@ -176,3 +177,27 @@ async def test_sync_raises_on_error(
 
     with pytest.raises(AnkiConnectApiError, match="please log in to AnkiWeb first"):
         await client.sync()
+
+
+async def test_sync_uses_a_longer_timeout(
+    client: AnkiConnectClient,
+    anki_responder: AnkiConnectResponder,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """sync() overrides the default per-request timeout with SYNC_REQUEST_TIMEOUT.
+
+    A real AnkiWeb sync routinely outlasts the default timeout other actions
+    use; this pins that override so it can't silently regress back to it.
+    """
+    original_request = client._request
+    captured: dict[str, object] = {}
+
+    async def _capturing_request(action: str, params=None, **kwargs):
+        captured.update(kwargs)
+        return await original_request(action, params, **kwargs)
+
+    monkeypatch.setattr(client, "_request", _capturing_request)
+
+    await client.sync()
+
+    assert captured.get("request_timeout") is SYNC_REQUEST_TIMEOUT

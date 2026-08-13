@@ -9,7 +9,12 @@ DEFAULT_PORT = 8765
 UPDATE_INTERVAL = timedelta(minutes=5)
 
 MIN_SCAN_INTERVAL_MINUTES = 1
-MAX_SCAN_INTERVAL_MINUTES = 1440
+MAX_INTERVAL_MINUTES = 1440
+
+# entry.options key for how often to trigger an AnkiConnect sync with AnkiWeb,
+# in minutes; 0 (MIN_AUTO_SYNC_INTERVAL_MINUTES) disables it.
+CONF_AUTO_SYNC_INTERVAL = "auto_sync_interval"
+MIN_AUTO_SYNC_INTERVAL_MINUTES = 0
 
 ANKICONNECT_API_VERSION = 6
 

@@ -21,11 +21,13 @@ import voluptuous as vol
 from .api import AnkiConnectClient, AnkiConnectConnectionError, AnkiConnectError
 from .const import (
     CARD_QUERIES,
+    CONF_AUTO_SYNC_INTERVAL,
     CONF_CUSTOM_QUERIES,
     CONF_QUERY,
     DEFAULT_PORT,
     DOMAIN,
-    MAX_SCAN_INTERVAL_MINUTES,
+    MAX_INTERVAL_MINUTES,
+    MIN_AUTO_SYNC_INTERVAL_MINUTES,
     MIN_SCAN_INTERVAL_MINUTES,
     REVIEWED_TODAY_KEY,
     UPDATE_INTERVAL,
@@ -117,7 +119,7 @@ class AnkiConnectOptionsFlow(OptionsFlow):
     async def async_step_init(
         self, _user_input: dict[str, Any] | None = None
     ) -> ConfigFlowResult:
-        """Show a menu to change the scan interval, or add/remove a custom query."""
+        """Show a menu to change the poll/sync intervals, or add/remove a custom query."""
         menu_options = ["set_interval", "add_query"]
         if self.config_entry.options.get(CONF_CUSTOM_QUERIES):
             menu_options.append("remove_query")
@@ -126,26 +128,38 @@ class AnkiConnectOptionsFlow(OptionsFlow):
     async def async_step_set_interval(
         self, user_input: dict[str, Any] | None = None
     ) -> ConfigFlowResult:
-        """Ask for how often, in minutes, to poll AnkiConnect."""
+        """Ask for the poll interval and the optional auto-sync interval, in minutes."""
         if user_input is not None:
             return self.async_create_entry(
                 title="",
                 data={
                     **self.config_entry.options,
                     CONF_SCAN_INTERVAL: user_input[CONF_SCAN_INTERVAL],
+                    CONF_AUTO_SYNC_INTERVAL: user_input[CONF_AUTO_SYNC_INTERVAL],
                 },
             )
 
-        current = self.config_entry.options.get(
+        current_scan_interval = self.config_entry.options.get(
             CONF_SCAN_INTERVAL, int(UPDATE_INTERVAL.total_seconds() // 60)
+        )
+        current_auto_sync_interval = self.config_entry.options.get(
+            CONF_AUTO_SYNC_INTERVAL, MIN_AUTO_SYNC_INTERVAL_MINUTES
         )
         return self.async_show_form(
             step_id="set_interval",
             data_schema=vol.Schema({
-                vol.Required(CONF_SCAN_INTERVAL, default=current): vol.All(
+                vol.Required(
+                    CONF_SCAN_INTERVAL, default=current_scan_interval
+                ): vol.All(
+                    vol.Coerce(int),
+                    vol.Range(min=MIN_SCAN_INTERVAL_MINUTES, max=MAX_INTERVAL_MINUTES),
+                ),
+                vol.Required(
+                    CONF_AUTO_SYNC_INTERVAL, default=current_auto_sync_interval
+                ): vol.All(
                     vol.Coerce(int),
                     vol.Range(
-                        min=MIN_SCAN_INTERVAL_MINUTES, max=MAX_SCAN_INTERVAL_MINUTES
+                        min=MIN_AUTO_SYNC_INTERVAL_MINUTES, max=MAX_INTERVAL_MINUTES
                     ),
                 ),
             }),

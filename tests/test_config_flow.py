@@ -8,7 +8,12 @@ from homeassistant.data_entry_flow import FlowResultType
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 from pytest_homeassistant_custom_component.test_util.aiohttp import AiohttpClientMocker
 
-from custom_components.ha_anki.const import CONF_CUSTOM_QUERIES, CONF_QUERY, DOMAIN
+from custom_components.ha_anki.const import (
+    CONF_AUTO_SYNC_INTERVAL,
+    CONF_CUSTOM_QUERIES,
+    CONF_QUERY,
+    DOMAIN,
+)
 
 from .conftest import TEST_HOST, TEST_PORT, TEST_URL, AnkiConnectResponder
 
@@ -262,7 +267,7 @@ async def test_options_flow_set_interval(
     anki_responder: AnkiConnectResponder,
     mock_config_entry: MockConfigEntry,
 ) -> None:
-    """Setting the update interval saves it under CONF_SCAN_INTERVAL."""
+    """Setting the intervals saves them under CONF_SCAN_INTERVAL/CONF_AUTO_SYNC_INTERVAL."""
     mock_config_entry.add_to_hass(hass)
     assert await hass.config_entries.async_setup(mock_config_entry.entry_id)
     await hass.async_block_till_done()
@@ -274,12 +279,41 @@ async def test_options_flow_set_interval(
     assert result["step_id"] == "set_interval"
 
     result = await hass.config_entries.options.async_configure(
+        result["flow_id"], {CONF_SCAN_INTERVAL: 15, CONF_AUTO_SYNC_INTERVAL: 30}
+    )
+    await hass.async_block_till_done()
+
+    assert result["type"] is FlowResultType.CREATE_ENTRY
+    assert mock_config_entry.options == {
+        CONF_SCAN_INTERVAL: 15,
+        CONF_AUTO_SYNC_INTERVAL: 30,
+    }
+
+
+async def test_options_flow_set_interval_defaults_auto_sync_to_disabled(
+    hass: HomeAssistant,
+    anki_responder: AnkiConnectResponder,
+    mock_config_entry: MockConfigEntry,
+) -> None:
+    """Leaving the auto-sync field alone keeps auto-sync disabled (0)."""
+    mock_config_entry.add_to_hass(hass)
+    assert await hass.config_entries.async_setup(mock_config_entry.entry_id)
+    await hass.async_block_till_done()
+
+    result = await hass.config_entries.options.async_init(mock_config_entry.entry_id)
+    result = await hass.config_entries.options.async_configure(
+        result["flow_id"], {"next_step_id": "set_interval"}
+    )
+    result = await hass.config_entries.options.async_configure(
         result["flow_id"], {CONF_SCAN_INTERVAL: 15}
     )
     await hass.async_block_till_done()
 
     assert result["type"] is FlowResultType.CREATE_ENTRY
-    assert mock_config_entry.options == {CONF_SCAN_INTERVAL: 15}
+    assert mock_config_entry.options == {
+        CONF_SCAN_INTERVAL: 15,
+        CONF_AUTO_SYNC_INTERVAL: 0,
+    }
 
 
 async def test_options_flow_remove_query(

@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
+from datetime import timedelta
 import logging
 
 from homeassistant.config_entries import ConfigEntry
+from homeassistant.const import CONF_SCAN_INTERVAL
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 
@@ -35,12 +37,18 @@ class AnkiConnectDataUpdateCoordinator(DataUpdateCoordinator[dict[str, int | Non
         client: AnkiConnectClient,
     ) -> None:
         """Initialize the coordinator."""
+        scan_interval_minutes = config_entry.options.get(CONF_SCAN_INTERVAL)
+        update_interval = (
+            timedelta(minutes=scan_interval_minutes)
+            if scan_interval_minutes is not None
+            else UPDATE_INTERVAL
+        )
         super().__init__(
             hass,
             _LOGGER,
             config_entry=config_entry,
             name=DOMAIN,
-            update_interval=UPDATE_INTERVAL,
+            update_interval=update_interval,
         )
         self.client = client
 

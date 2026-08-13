@@ -8,6 +8,11 @@ DEFAULT_PORT = 8765
 
 UPDATE_INTERVAL = timedelta(minutes=5)
 
+# Bounds for the user-configurable scan interval (stored in options as minutes,
+# under homeassistant.const.CONF_SCAN_INTERVAL).
+MIN_SCAN_INTERVAL_MINUTES = 1
+MAX_SCAN_INTERVAL_MINUTES = 1440
+
 ANKICONNECT_API_VERSION = 6
 
 # Sensor keys, also used as translation keys, mapped to their findCards query.

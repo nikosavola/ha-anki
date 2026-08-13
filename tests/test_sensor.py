@@ -1,7 +1,9 @@
 """Tests for the ha-anki sensor platform and entry setup."""
 
+from datetime import timedelta
+
 from homeassistant.config_entries import ConfigEntryState
-from homeassistant.const import ATTR_ENTITY_ID, CONF_NAME
+from homeassistant.const import ATTR_ENTITY_ID, CONF_NAME, CONF_SCAN_INTERVAL
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers import entity_registry as er
@@ -97,6 +99,31 @@ async def test_coordinator_polls_on_interval(
     await hass.async_block_till_done()
 
     assert _state(hass, mock_config_entry, "cards_due") == "3"
+
+
+async def test_coordinator_honors_configured_scan_interval(
+    hass: HomeAssistant,
+    anki_responder: AnkiConnectResponder,
+    mock_config_entry: MockConfigEntry,
+    freezer,
+) -> None:
+    """A configured scan interval, not the default, controls the polling cadence."""
+    custom_interval = timedelta(minutes=1)
+    anki_responder.set_cards("is:due", [1])
+    mock_config_entry.add_to_hass(hass)
+    hass.config_entries.async_update_entry(
+        mock_config_entry, options={CONF_SCAN_INTERVAL: 1}
+    )
+    assert await hass.config_entries.async_setup(mock_config_entry.entry_id)
+    await hass.async_block_till_done()
+    assert _state(hass, mock_config_entry, "cards_due") == "1"
+
+    anki_responder.set_cards("is:due", [1, 2])
+    freezer.tick(custom_interval)
+    async_fire_time_changed(hass)
+    await hass.async_block_till_done()
+
+    assert _state(hass, mock_config_entry, "cards_due") == "2"
 
 
 async def test_sensors_go_unavailable_then_recover(

@@ -2,7 +2,7 @@
 
 import aiohttp
 from homeassistant.config_entries import SOURCE_USER
-from homeassistant.const import CONF_HOST, CONF_NAME, CONF_PORT
+from homeassistant.const import CONF_HOST, CONF_NAME, CONF_PORT, CONF_SCAN_INTERVAL
 from homeassistant.core import HomeAssistant
 from homeassistant.data_entry_flow import FlowResultType
 from pytest_homeassistant_custom_component.common import MockConfigEntry
@@ -255,6 +255,31 @@ async def test_options_flow_add_query_rejects_duplicate_name(
 
     assert result["type"] is FlowResultType.FORM
     assert result["errors"] == {CONF_NAME: "name_exists"}
+
+
+async def test_options_flow_set_interval(
+    hass: HomeAssistant,
+    anki_responder: AnkiConnectResponder,
+    mock_config_entry: MockConfigEntry,
+) -> None:
+    """Setting the update interval saves it under CONF_SCAN_INTERVAL."""
+    mock_config_entry.add_to_hass(hass)
+    assert await hass.config_entries.async_setup(mock_config_entry.entry_id)
+    await hass.async_block_till_done()
+
+    result = await hass.config_entries.options.async_init(mock_config_entry.entry_id)
+    result = await hass.config_entries.options.async_configure(
+        result["flow_id"], {"next_step_id": "set_interval"}
+    )
+    assert result["step_id"] == "set_interval"
+
+    result = await hass.config_entries.options.async_configure(
+        result["flow_id"], {CONF_SCAN_INTERVAL: 15}
+    )
+    await hass.async_block_till_done()
+
+    assert result["type"] is FlowResultType.CREATE_ENTRY
+    assert mock_config_entry.options == {CONF_SCAN_INTERVAL: 15}
 
 
 async def test_options_flow_remove_query(

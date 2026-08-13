@@ -126,6 +126,62 @@ async def test_coordinator_honors_configured_scan_interval(
     assert _state(hass, mock_config_entry, "cards_due") == "2"
 
 
+async def test_coordinator_falls_back_on_invalid_scan_interval_option(
+    hass: HomeAssistant,
+    anki_responder: AnkiConnectResponder,
+    mock_config_entry: MockConfigEntry,
+    freezer,
+) -> None:
+    """An out-of-range or malformed scan_interval option is ignored, not fatal."""
+    anki_responder.set_cards("is:due", [1])
+    mock_config_entry.add_to_hass(hass)
+    hass.config_entries.async_update_entry(
+        mock_config_entry, options={CONF_SCAN_INTERVAL: 0}
+    )
+    assert await hass.config_entries.async_setup(mock_config_entry.entry_id)
+    await hass.async_block_till_done()
+    assert mock_config_entry.state is ConfigEntryState.LOADED
+    assert _state(hass, mock_config_entry, "cards_due") == "1"
+
+    anki_responder.set_cards("is:due", [1, 2])
+    freezer.tick(UPDATE_INTERVAL)
+    async_fire_time_changed(hass)
+    await hass.async_block_till_done()
+
+    assert _state(hass, mock_config_entry, "cards_due") == "2"
+
+
+async def test_options_flow_set_interval_takes_effect_on_loaded_entry(
+    hass: HomeAssistant,
+    anki_responder: AnkiConnectResponder,
+    mock_config_entry: MockConfigEntry,
+    freezer,
+) -> None:
+    """Saving a new interval through the options flow reschedules a loaded entry's polling."""
+    custom_interval = timedelta(minutes=1)
+    anki_responder.set_cards("is:due", [1])
+    mock_config_entry.add_to_hass(hass)
+    assert await hass.config_entries.async_setup(mock_config_entry.entry_id)
+    await hass.async_block_till_done()
+    assert _state(hass, mock_config_entry, "cards_due") == "1"
+
+    result = await hass.config_entries.options.async_init(mock_config_entry.entry_id)
+    result = await hass.config_entries.options.async_configure(
+        result["flow_id"], {"next_step_id": "set_interval"}
+    )
+    await hass.config_entries.options.async_configure(
+        result["flow_id"], {CONF_SCAN_INTERVAL: 1}
+    )
+    await hass.async_block_till_done()
+
+    anki_responder.set_cards("is:due", [1, 2])
+    freezer.tick(custom_interval)
+    async_fire_time_changed(hass)
+    await hass.async_block_till_done()
+
+    assert _state(hass, mock_config_entry, "cards_due") == "2"
+
+
 async def test_sensors_go_unavailable_then_recover(
     hass: HomeAssistant,
     anki_responder: AnkiConnectResponder,

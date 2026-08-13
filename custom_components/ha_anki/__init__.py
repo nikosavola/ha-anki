@@ -142,18 +142,44 @@ def _async_schedule_auto_sync(
         return
 
     coordinator = entry.runtime_data
+    sync_in_progress = False
+    was_failing = False
 
     async def _async_auto_sync(_now: datetime) -> None:
         """Trigger a sync, then refresh sensor state, logging rather than raising.
 
         There's no caller here to surface a HomeAssistantError to, unlike the
         sync service's async_sync in sensor.py.
+
+        HA's interval scheduler reschedules the next tick immediately, not
+        after this one finishes, so a sync slower than the configured
+        interval would otherwise overlap the next tick; sync_in_progress
+        skips a tick rather than starting a second concurrent sync. Repeated
+        failures log once, not once per tick, matching how
+        AnkiConnectDataUpdateCoordinator already handles the sibling poll
+        failures.
         """
+        nonlocal sync_in_progress, was_failing
+        if sync_in_progress:
+            _LOGGER.debug(
+                "Skipping scheduled AnkiConnect sync: the previous one is still running"
+            )
+            return
+
+        sync_in_progress = True
         try:
             await coordinator.client.sync()
         except AnkiConnectError as err:
-            _LOGGER.warning("Scheduled AnkiConnect sync failed: %s", err)
+            if not was_failing:
+                _LOGGER.warning("Scheduled AnkiConnect sync failed: %s", err)
+                was_failing = True
             return
+        finally:
+            sync_in_progress = False
+
+        if was_failing:
+            _LOGGER.info("Scheduled AnkiConnect sync recovered")
+            was_failing = False
         await coordinator.async_request_refresh()
 
     entry.async_on_unload(

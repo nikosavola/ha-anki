@@ -1,6 +1,8 @@
 """Tests for the ha_anki.add_note domain service and scheduled auto-sync."""
 
+import asyncio
 from datetime import timedelta
+import logging
 
 from homeassistant.config_entries import ConfigEntryState
 from homeassistant.const import CONF_SCAN_INTERVAL
@@ -290,3 +292,206 @@ async def test_auto_sync_error_is_logged_not_fatal(
     assert anki_responder.sync_call_count == 1
     assert mock_config_entry.state is ConfigEntryState.LOADED
     assert _cards_due_state(hass, mock_config_entry) == "1"
+
+
+async def test_auto_sync_repeated_failure_logs_once(
+    hass: HomeAssistant,
+    anki_responder: AnkiConnectResponder,
+    mock_config_entry: MockConfigEntry,
+    freezer,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """A persistent sync failure logs one warning, not one per tick, then recovers."""
+    mock_config_entry.add_to_hass(hass)
+    hass.config_entries.async_update_entry(
+        mock_config_entry, options={CONF_AUTO_SYNC_INTERVAL: 1}
+    )
+    assert await hass.config_entries.async_setup(mock_config_entry.entry_id)
+    await hass.async_block_till_done()
+
+    anki_responder.set_sync_error("please log in to AnkiWeb first")
+    with caplog.at_level(logging.WARNING, logger="custom_components.ha_anki"):
+        for _ in range(3):
+            freezer.tick(timedelta(minutes=1))
+            async_fire_time_changed(hass)
+            await hass.async_block_till_done()
+
+    assert anki_responder.sync_call_count == 3
+    failure_records = [
+        r for r in caplog.records if "Scheduled AnkiConnect sync failed" in r.message
+    ]
+    assert len(failure_records) == 1
+
+    anki_responder.set_sync_error(None)
+    with caplog.at_level(logging.INFO, logger="custom_components.ha_anki"):
+        freezer.tick(timedelta(minutes=1))
+        async_fire_time_changed(hass)
+        await hass.async_block_till_done()
+
+    assert any("recovered" in r.message for r in caplog.records)
+
+
+async def test_auto_sync_cancelled_on_unload(
+    hass: HomeAssistant,
+    anki_responder: AnkiConnectResponder,
+    mock_config_entry: MockConfigEntry,
+    freezer,
+) -> None:
+    """Unloading the entry stops the scheduled sync from firing again."""
+    mock_config_entry.add_to_hass(hass)
+    hass.config_entries.async_update_entry(
+        mock_config_entry, options={CONF_AUTO_SYNC_INTERVAL: 1}
+    )
+    assert await hass.config_entries.async_setup(mock_config_entry.entry_id)
+    await hass.async_block_till_done()
+
+    assert await hass.config_entries.async_unload(mock_config_entry.entry_id)
+    await hass.async_block_till_done()
+
+    freezer.tick(timedelta(days=1))
+    async_fire_time_changed(hass)
+    await hass.async_block_till_done()
+
+    assert anki_responder.sync_call_count == 0
+
+
+async def test_auto_sync_disable_via_options_stops_further_syncs(
+    hass: HomeAssistant,
+    anki_responder: AnkiConnectResponder,
+    mock_config_entry: MockConfigEntry,
+    freezer,
+) -> None:
+    """Disabling auto-sync through the options flow on a loaded entry takes effect."""
+    mock_config_entry.add_to_hass(hass)
+    hass.config_entries.async_update_entry(
+        mock_config_entry, options={CONF_AUTO_SYNC_INTERVAL: 1}
+    )
+    assert await hass.config_entries.async_setup(mock_config_entry.entry_id)
+    await hass.async_block_till_done()
+
+    freezer.tick(timedelta(minutes=1))
+    async_fire_time_changed(hass)
+    await hass.async_block_till_done()
+    assert anki_responder.sync_call_count == 1
+
+    result = await hass.config_entries.options.async_init(mock_config_entry.entry_id)
+    result = await hass.config_entries.options.async_configure(
+        result["flow_id"], {"next_step_id": "set_interval"}
+    )
+    await hass.config_entries.options.async_configure(
+        result["flow_id"], {CONF_SCAN_INTERVAL: 5, CONF_AUTO_SYNC_INTERVAL: 0}
+    )
+    await hass.async_block_till_done()
+
+    freezer.tick(timedelta(minutes=10))
+    async_fire_time_changed(hass)
+    await hass.async_block_till_done()
+
+    assert anki_responder.sync_call_count == 1
+
+
+async def test_auto_sync_reschedule_via_options_uses_new_interval(
+    hass: HomeAssistant,
+    anki_responder: AnkiConnectResponder,
+    mock_config_entry: MockConfigEntry,
+    freezer,
+) -> None:
+    """Changing the auto-sync interval through the options flow reschedules it."""
+    mock_config_entry.add_to_hass(hass)
+    hass.config_entries.async_update_entry(
+        mock_config_entry, options={CONF_AUTO_SYNC_INTERVAL: 1}
+    )
+    assert await hass.config_entries.async_setup(mock_config_entry.entry_id)
+    await hass.async_block_till_done()
+
+    result = await hass.config_entries.options.async_init(mock_config_entry.entry_id)
+    result = await hass.config_entries.options.async_configure(
+        result["flow_id"], {"next_step_id": "set_interval"}
+    )
+    await hass.config_entries.options.async_configure(
+        result["flow_id"], {CONF_SCAN_INTERVAL: 5, CONF_AUTO_SYNC_INTERVAL: 3}
+    )
+    await hass.async_block_till_done()
+
+    freezer.tick(timedelta(minutes=1))
+    async_fire_time_changed(hass)
+    await hass.async_block_till_done()
+    assert anki_responder.sync_call_count == 0, "old 1-minute cadence must not fire"
+
+    freezer.tick(timedelta(minutes=2))
+    async_fire_time_changed(hass)
+    await hass.async_block_till_done()
+    assert anki_responder.sync_call_count == 1
+
+
+async def test_auto_sync_interval_unblocked_by_a_much_longer_poll_interval(
+    hass: HomeAssistant,
+    anki_responder: AnkiConnectResponder,
+    mock_config_entry: MockConfigEntry,
+    freezer,
+) -> None:
+    """A short auto-sync interval fires on its own cadence, not gated on the poll.
+
+    Doesn't assert on sensor state: a successful scheduled sync also calls
+    async_request_refresh, which reschedules the coordinator's own poll timer
+    relative to itself, so poll and sync timing aren't fully independent of
+    each other's side effects, only independently triggered.
+    """
+    mock_config_entry.add_to_hass(hass)
+    hass.config_entries.async_update_entry(
+        mock_config_entry,
+        options={CONF_SCAN_INTERVAL: 10, CONF_AUTO_SYNC_INTERVAL: 1},
+    )
+    assert await hass.config_entries.async_setup(mock_config_entry.entry_id)
+    await hass.async_block_till_done()
+    assert anki_responder.sync_call_count == 0
+
+    for expected in range(1, 4):
+        freezer.tick(timedelta(minutes=1))
+        async_fire_time_changed(hass)
+        await hass.async_block_till_done()
+        assert anki_responder.sync_call_count == expected
+
+
+async def test_auto_sync_skips_overlapping_run(
+    hass: HomeAssistant,
+    anki_responder: AnkiConnectResponder,
+    mock_config_entry: MockConfigEntry,
+    freezer,
+) -> None:
+    """A sync slower than the interval isn't joined by the next scheduled tick."""
+    mock_config_entry.add_to_hass(hass)
+    hass.config_entries.async_update_entry(
+        mock_config_entry, options={CONF_AUTO_SYNC_INTERVAL: 1}
+    )
+    assert await hass.config_entries.async_setup(mock_config_entry.entry_id)
+    await hass.async_block_till_done()
+
+    call_count = 0
+    started = asyncio.Event()
+    release = asyncio.Event()
+
+    async def slow_sync() -> None:
+        nonlocal call_count
+        call_count += 1
+        started.set()
+        await release.wait()
+
+    mock_config_entry.runtime_data.client.sync = slow_sync
+
+    freezer.tick(timedelta(minutes=1))
+    async_fire_time_changed(hass)
+    await started.wait()
+    assert call_count == 1
+
+    freezer.tick(timedelta(minutes=1))
+    async_fire_time_changed(hass)
+    # A bare yield, not a timed sleep: the frozen clock never advances in
+    # real time, so anything that waits on a real delay would hang forever.
+    for _ in range(10):
+        await asyncio.sleep(0)
+    assert call_count == 1, "a second tick must not start a concurrent sync"
+
+    release.set()
+    await hass.async_block_till_done()
+    assert call_count == 1

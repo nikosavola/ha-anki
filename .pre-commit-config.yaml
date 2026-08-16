@@ -63,7 +63,7 @@ repos:
           - pytest-homeassistant-custom-component==0.13.354
 
   - repo: https://github.com/python-jsonschema/check-jsonschema
-    rev: 0.37.4
+    rev: 0.38.0
     hooks:
       - id: check-github-workflows
         priority: 10

@@ -965,9 +965,7 @@ dev = [
   { name = "pytest-freezer", specifier = ">=0.4.9" },
   { name = "pytest-homeassistant-custom-component", specifier = ">=0.13.354" },
 ]
-github = [
-  { name = "pytest-github-actions-annotate-failures", specifier = ">=0.4.2" }
-]
+github = [{ name = "pytest-github-actions-annotate-failures", specifier = ">=0.4.2" }]
 
 [[package]]
 name = "habluetooth"

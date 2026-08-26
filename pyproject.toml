@@ -1,6 +1,6 @@
 [project]
 name = "ha-anki"
-version = "0.1.0"
+version = "0.1.1"
 description = "Home Assistant integration exposing Anki card counts via AnkiConnect"
 readme = "README.md"
 requires-python = ">=3.14.2"

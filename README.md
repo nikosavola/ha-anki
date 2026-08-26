@@ -47,6 +47,25 @@ enter the host and port of the machine running Anki. Home Assistant polls that h
 every 5 minutes; it does not fetch on demand, so multiple sensors never generate
 duplicate requests.
 
+### Poll and auto-sync intervals
+
+From **Settings → Devices & services → ha-anki → Configure → set_interval** you can
+adjust two independent intervals, both in minutes:
+
+- **Scan interval** — how often Home Assistant polls AnkiConnect for sensor state
+  (card counts, reviewed today). Defaults to 5 minutes; this only reads from
+  AnkiConnect's local collection, it never talks to AnkiWeb.
+- **Auto-sync interval** — how often this integration asks AnkiConnect to sync the
+  Anki collection with AnkiWeb (the same action as Anki's own sync button), then
+  refreshes sensor state. Set to `0` (the default) to disable it entirely and rely
+  on the manual `ha_anki.sync` service, or on Anki's own sync on open/close.
+
+A sync slower than its own interval is never run twice concurrently: a still-running
+sync makes the next scheduled tick a no-op instead of overlapping it. If you already
+sync AnkiWeb outside Home Assistant, e.g. via the systemd timer in
+[Running Anki on a headless server](#6-sync-to-ankiweb-periodically-in-the-background)
+below, leave this at `0` so the two don't fight over the same sync.
+
 ## Supported functionality
 
 One config entry polls AnkiConnect once per interval, batched into a single
@@ -356,8 +375,13 @@ dialogs or first-run flows behave oddly.
 ### 6. Sync to AnkiWeb periodically in the background
 
 Anki normally syncs on open/close, which never happens for a service that just keeps running.
-Trigger it on a schedule instead by calling AnkiConnect's own `sync` action with a systemd
-timer:
+Trigger it on a schedule instead. This integration can do that for you: set the
+**auto-sync interval** described in
+[Poll and auto-sync intervals](#poll-and-auto-sync-intervals) above, no systemd timer
+required. The timer below is the OS-level alternative, useful if you want AnkiWeb sync to
+keep running independently of Home Assistant; don't run both against the same Anki
+instance, since the two would fight over who's syncing when. It works by calling
+AnkiConnect's own `sync` action on a schedule:
 
 ```ini
 # /etc/systemd/system/anki-sync.service

@@ -60,7 +60,7 @@ repos:
         # Without homeassistant installed, base classes resolve to Any and every
         # `@override` in the codebase falsely reports a missing parent attribute.
         additional_dependencies:
-          - pytest-homeassistant-custom-component==0.13.357
+          - pytest-homeassistant-custom-component==0.13.361
 
   - repo: https://github.com/python-jsonschema/check-jsonschema
     rev: 0.38.0

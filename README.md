@@ -30,6 +30,7 @@ starting on boot, and syncing to AnkiWeb on a schedule, see
 ### HACS
 
 [![Open your Home Assistant instance and open a repository inside the Home Assistant Community Store.](https://my.home-assistant.io/badges/hacs_repository.svg)](https://my.home-assistant.io/redirect/hacs_repository/?owner=nikosavola&repository=ha-anki&category=integration)
+[![FOSSA Status](https://app.fossa.com/api/projects/git%2Bgithub.com%2Fnikosavola%2Fha-anki.svg?type=shield)](https://app.fossa.com/projects/git%2Bgithub.com%2Fnikosavola%2Fha-anki?ref=badge_shield)
 
 1. Add this repository to HACS as a custom repository of type *Integration* (the badge
    above does this for you), then download **ha-anki** from HACS.
@@ -477,3 +478,7 @@ security issue? See [SECURITY.md](SECURITY.md) instead of opening a public issue
 
 Version numbers follow [ZeroVer](https://0ver.org/): the major version stays at 0
 indefinitely, so a 0.y bump can carry breaking changes.
+
+
+## License
+[![FOSSA Status](https://app.fossa.com/api/projects/git%2Bgithub.com%2Fnikosavola%2Fha-anki.svg?type=large)](https://app.fossa.com/projects/git%2Bgithub.com%2Fnikosavola%2Fha-anki?ref=badge_large)

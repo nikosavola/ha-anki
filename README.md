@@ -15,6 +15,31 @@ counts as sensors, via the [AnkiConnect](https://ankiweb.net/shared/info/2055492
 add-on. Anki must be running with AnkiConnect installed and reachable over the local
 network; this integration only polls its local HTTP API, it doesn't talk to AnkiWeb.
 
+## How it works
+
+AnkiConnect is an Anki add-on that exposes a local HTTP API; this integration is primarily a
+polling client for it. Everything runs on your own network, and Anki itself has to be
+running for any of it to answer.
+
+```mermaid
+flowchart LR
+    subgraph HA["Home Assistant"]
+        Coordinator["Coordinator<br/>one poll per interval"] --> Sensors["Sensors<br/>cards due, new, review,<br/>reviewed today"]
+    end
+
+    AnkiConnect["AnkiConnect add-on<br/>HTTP, default port 8765"]
+    Anki["Anki desktop<br/>(must be running)"]
+    AnkiWeb["AnkiWeb"]
+
+    Coordinator -->|"HTTP JSON"| AnkiConnect
+    AnkiConnect --> Anki
+    Anki <-.->|"optional sync"| AnkiWeb
+```
+
+The only path that leaves your network is Anki's own AnkiWeb sync. This integration can ask
+Anki to trigger it (see [Poll and auto-sync intervals](#poll-and-auto-sync-intervals)), but
+it never talks to AnkiWeb itself.
+
 ## Requirements
 
 - Anki desktop, running, with the AnkiConnect add-on installed
@@ -77,6 +102,25 @@ One config entry polls AnkiConnect once per interval, batched into a single
 | New cards      | `findCards`, query `is:new`    |
 | Review cards   | `findCards`, query `is:review` |
 | Reviewed today | `getNumCardsReviewedToday`     |
+
+All of it rides in that one `multi` request, so adding sensors never adds polling overhead:
+
+```mermaid
+sequenceDiagram
+    participant HA as Home Assistant
+    participant C as Coordinator
+    participant AC as AnkiConnect
+    participant A as Anki
+
+    loop Every scan interval, default 5 minutes
+        C->>AC: multi request
+        Note over C,AC: one HTTP round trip carrying every findCards<br/>query plus getNumCardsReviewedToday
+        AC->>A: search the collection
+        A-->>AC: matching card IDs
+        AC-->>C: card ID lists and reviewed-today count, in request order
+        C->>HA: sensor values update
+    end
+```
 
 ### Custom query sensors
 
@@ -147,6 +191,22 @@ combining terms, for example:
           Back: "{{ flashcard.data.back }}"
   ```
 
+  ```mermaid
+  sequenceDiagram
+      participant Script as Script or automation
+      participant AI as ai_task.generate_data
+      participant S as ha_anki.add_note
+      participant AC as AnkiConnect
+
+      Script->>AI: free text
+      AI-->>Script: front and back
+      Script->>S: config_entry_id, deck, model, fields
+      S->>AC: addNote
+      AC-->>S: note_id
+      S->>AC: refresh (another multi poll)
+      AC-->>S: fresh sensor values
+  ```
+
   Wire that sequence into a script or automation, e.g. triggered by a voice
   assistant intent or a note-taking shortcut, so a snippet of text becomes a
   card without opening Anki.
@@ -172,13 +232,14 @@ fine-grained control over the systemd units.
 
 ### Overview
 
-1. Install Anki and a virtual display (Xvfb).
-1. Install the AnkiConnect add-on.
-1. Configure AnkiConnect to accept connections from your LAN.
-1. Log in to AnkiWeb once, interactively, so sync credentials are cached.
-1. Run Anki under systemd, restarting automatically if it crashes.
-1. Add a systemd timer that periodically calls AnkiConnect's `sync` action, so the
-   collection stays up to date with AnkiWeb without you opening Anki.
+```mermaid
+flowchart LR
+    A["1. Install Anki and Xvfb"] --> B["2. Install the AnkiConnect add-on"]
+    B --> C["3. Configure AnkiConnect for LAN access"]
+    C --> D["4. Log in to AnkiWeb once, over VNC"]
+    D --> E["5. Run Anki under systemd"]
+    E --> F["6. Sync to AnkiWeb on a schedule"]
+```
 
 ### 1. Install Anki and Xvfb
 
@@ -382,6 +443,14 @@ required. The timer below is the OS-level alternative, useful if you want AnkiWe
 keep running independently of Home Assistant; don't run both against the same Anki
 instance, since the two would fight over who's syncing when. It works by calling
 AnkiConnect's own `sync` action on a schedule:
+
+```mermaid
+flowchart TD
+    Goal["Keep the collection in sync with AnkiWeb"] --> Pick{"Pick one"}
+    Pick -->|"integration auto-sync interval"| Int["Home Assistant asks AnkiConnect<br/>to sync, then refreshes sensors"]
+    Pick -->|"systemd timer"| Timer["anki-sync.timer curls<br/>AnkiConnect's sync action"]
+    Int -.->|"never both"| Timer
+```
 
 ```ini
 # /etc/systemd/system/anki-sync.service

@@ -33,6 +33,16 @@ These steps cover the common case, with Anki open on your desktop.
 
 Anki needs to stay open for the sensors to update. For an always-on setup, see the [headless server guide](https://github.com/nikosavola/ha-anki/blob/main/docs/headless.md).
 
+### Home Assistant OS: use the Anki app
+
+If Home Assistant runs on Home Assistant OS, you can skip the desktop steps and run Anki inside Home Assistant with the companion Anki app. The app keeps Anki running headless and announces it to Home Assistant, so you don't have to enter an address.
+
+1. In **Settings > Apps > App store**, add this repository: <https://github.com/nikosavola/ha-anki-app> <!-- TODO: publish ha-anki-app -->
+1. Install the **Anki** app. On its **Configuration** tab, enter your AnkiWeb email and password, then start the app.
+1. Under **Settings > Devices & services**, accept **Discovered: ha-anki** and click **Submit**.
+
+The headless Anki in the app only syncs at login, so this integration syncs with AnkiWeb every 30 minutes by default. You can change that under **Configure** on the integration.
+
 ## How it works
 
 AnkiConnect is an Anki add-on that exposes a local HTTP API; this integration is primarily a
@@ -76,6 +86,11 @@ The [Quick start](#quick-start) covers adding the integration. Home Assistant po
 AnkiConnect every 5 minutes. It does not fetch on demand, so multiple sensors never
 generate duplicate requests.
 
+You can paste a full address such as `http://192.168.1.20:8765` into the **Host** field.
+If you set an `apiKey` in AnkiConnect's config, enter the same value in the optional
+**API key** field. If the computer's IP address changes, use **Reconfigure** on the
+integration instead of deleting it, so your custom query sensors are kept.
+
 ### Poll and auto-sync intervals
 
 From **Settings > Devices & services > ha-anki > Configure > set_interval** you can
@@ -86,8 +101,9 @@ adjust two independent intervals, both in minutes:
   AnkiConnect's local collection, it never talks to AnkiWeb.
 - **Auto-sync interval**: how often this integration asks AnkiConnect to sync the
   Anki collection with AnkiWeb (the same action as Anki's own sync button), then
-  refreshes sensor state. Set to `0` (the default) to disable it entirely and rely
-  on the manual `ha_anki.sync` service, or on Anki's own sync on open/close.
+  refreshes sensor state. Set to `0` to disable it entirely and rely on the manual
+  `ha_anki.sync` service, or on Anki's own sync on open/close. Entries you add by hand
+  start at `0`; entries from the Anki app start at `30`.
 
 A sync slower than its own interval is never run twice concurrently: a still-running
 sync makes the next scheduled tick a no-op instead of overlapping it. If you already
@@ -217,9 +233,9 @@ combining terms, for example:
 
 ## Known limitations
 
-- **Local network only.** AnkiConnect has no authentication beyond an optional origin
-  allowlist, so only point this integration at an AnkiConnect instance on a network you
-  trust.
+- **Local network only.** AnkiConnect talks plain HTTP and its only access control is
+  an optional `apiKey`, so only point this integration at an AnkiConnect instance on a
+  network you trust, and set an API key if others share that network.
 - **Anki must be running.** AnkiConnect is an Anki add-on, not a standalone service; if
   Anki is closed, the sensors go unavailable until it's reopened.
 

@@ -14,6 +14,20 @@
           "port": "The port AnkiConnect is listening on.",
           "api_key": "Only needed if you set apiKey in AnkiConnect's config."
         }
+      },
+      "reconfigure": {
+        "title": "Update the AnkiConnect connection",
+        "description": "Change the address or API key if the computer running Anki has a new IP address or its API key changed. Your custom queries are kept.",
+        "data": {
+          "host": "Host",
+          "port": "Port",
+          "api_key": "API key"
+        },
+        "data_description": {
+          "host": "The IP address or hostname of the machine running Anki. A URL like http://192.168.1.20:8765 also works.",
+          "port": "The port AnkiConnect is listening on.",
+          "api_key": "Only needed if you set apiKey in AnkiConnect's config."
+        }
       }
     },
     "error": {
@@ -26,7 +40,8 @@
       "unknown": "Unexpected error"
     },
     "abort": {
-      "already_configured": "This AnkiConnect instance is already configured."
+      "already_configured": "This AnkiConnect instance is already configured.",
+      "reconfigure_successful": "The AnkiConnect connection was updated."
     }
   },
   "options": {

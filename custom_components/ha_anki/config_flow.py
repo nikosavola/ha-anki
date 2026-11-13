@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 import logging
 from typing import Any, override
 
@@ -66,34 +67,64 @@ STEP_USER_DATA_SCHEMA = vol.Schema({
 })
 
 
-async def _async_check_connection(
-    hass: HomeAssistant, host: str, port: int, api_key: str | None
-) -> dict[str, str]:
-    """Ask AnkiConnect for its version, mapping any failure to a form error.
+async def _async_validate_connection(
+    hass: HomeAssistant,
+    raw_host: str,
+    raw_port: int,
+    raw_api_key: str | None,
+) -> tuple[dict[str, Any] | None, dict[str, str]]:
+    """Normalize the connection fields, then check that AnkiConnect answers.
 
     Returns:
-        A dict of form errors, empty when AnkiConnect answered.
+        The cleaned entry data, or None if validation failed, and a dict of
+        form errors, empty on success.
 
     """
+    normalized = normalize_host(raw_host, raw_port)
+    if normalized is None:
+        return None, {CONF_HOST: "invalid_host"}
+    host, port = normalized
+    api_key = (raw_api_key or "").strip() or None
+
     client = AnkiConnectClient(
         async_get_clientsession(hass), host, port, api_key=api_key
     )
     try:
         await client.get_version()
     except AnkiConnectUnreachableError:
-        return {"base": "cannot_connect_refused"}
+        return None, {"base": "cannot_connect_refused"}
     except AnkiConnectTimeoutError:
-        return {"base": "timeout_connect"}
+        return None, {"base": "timeout_connect"}
     except AnkiConnectUnexpectedResponseError:
-        return {"base": "not_ankiconnect"}
+        return None, {"base": "not_ankiconnect"}
     except AnkiConnectInvalidApiKeyError:
-        return {CONF_API_KEY: "invalid_api_key"}
+        return None, {CONF_API_KEY: "invalid_api_key"}
     except AnkiConnectError:
-        return {"base": "cannot_connect"}
+        return None, {"base": "cannot_connect"}
     except Exception:
         _LOGGER.exception("Unexpected error validating AnkiConnect connection")
-        return {"base": "unknown"}
-    return {}
+        return None, {"base": "unknown"}
+
+    data: dict[str, Any] = {CONF_HOST: host, CONF_PORT: port}
+    if api_key is not None:
+        data[CONF_API_KEY] = api_key
+    return data, {}
+
+
+def _data_with_updates(
+    entry: ConfigEntry, updates: Mapping[str, Any]
+) -> dict[str, Any]:
+    """Overlay `updates` on the entry's data, dropping an API key they leave out.
+
+    async_update_reload_and_abort's data_updates merges instead, so a cleared
+    key would otherwise survive.
+
+    Returns:
+        The merged entry data.
+
+    """
+    kept = {key: value for key, value in entry.data.items() if key != CONF_API_KEY}
+    return {**kept, **updates}
 
 
 class AnkiConnectConfigFlow(ConfigFlow, domain=DOMAIN):
@@ -109,24 +140,69 @@ class AnkiConnectConfigFlow(ConfigFlow, domain=DOMAIN):
         errors: dict[str, str] = {}
 
         if user_input is not None:
-            normalized = normalize_host(user_input[CONF_HOST], user_input[CONF_PORT])
-            if normalized is None:
-                errors[CONF_HOST] = "invalid_host"
-            else:
-                host, port = normalized
-                api_key = (user_input.get(CONF_API_KEY) or "").strip() or None
-                await self.async_set_unique_id(f"{host}:{port}")
+            # Checked before connecting, so a duplicate aborts even while Anki is closed.
+            if normalized := normalize_host(
+                user_input[CONF_HOST], user_input[CONF_PORT]
+            ):
+                await self.async_set_unique_id(f"{normalized[0]}:{normalized[1]}")
                 self._abort_if_unique_id_configured()
-
-                errors = await _async_check_connection(self.hass, host, port, api_key)
-                if not errors:
-                    data: dict[str, Any] = {CONF_HOST: host, CONF_PORT: port}
-                    if api_key is not None:
-                        data[CONF_API_KEY] = api_key
-                    return self.async_create_entry(title=f"Anki ({host})", data=data)
+            data, errors = await _async_validate_connection(
+                self.hass,
+                user_input[CONF_HOST],
+                user_input[CONF_PORT],
+                user_input.get(CONF_API_KEY),
+            )
+            if data is not None:
+                return self.async_create_entry(
+                    title=f"Anki ({data[CONF_HOST]})", data=data
+                )
 
         return self.async_show_form(
             step_id="user", data_schema=STEP_USER_DATA_SCHEMA, errors=errors
+        )
+
+    async def async_step_reconfigure(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
+        """Change the host, port, or API key, keeping the entry's custom queries."""
+        entry = self._get_reconfigure_entry()
+        errors: dict[str, str] = {}
+
+        if user_input is not None:
+            data, errors = await _async_validate_connection(
+                self.hass,
+                user_input[CONF_HOST],
+                user_input[CONF_PORT],
+                user_input.get(CONF_API_KEY),
+            )
+            if data is not None:
+                unique_id = f"{data[CONF_HOST]}:{data[CONF_PORT]}"
+                existing = await self.async_set_unique_id(
+                    unique_id, raise_on_progress=False
+                )
+                # Not _abort_if_unique_id_configured: that would also match this entry
+                # when only the API key changed.
+                if existing is not None and existing.entry_id != entry.entry_id:
+                    return self.async_abort(reason="already_configured")
+
+                title = entry.title
+                if entry.title == f"Anki ({entry.data[CONF_HOST]})":
+                    title = f"Anki ({data[CONF_HOST]})"
+                return self.async_update_reload_and_abort(
+                    entry,
+                    unique_id=unique_id,
+                    title=title,
+                    data=_data_with_updates(entry, data),
+                )
+
+        # Prefill from the entry on first show, and from the rejected input after that.
+        suggested = user_input if user_input is not None else entry.data
+        return self.async_show_form(
+            step_id="reconfigure",
+            data_schema=self.add_suggested_values_to_schema(
+                STEP_USER_DATA_SCHEMA, suggested
+            ),
+            errors=errors,
         )
 
     @staticmethod

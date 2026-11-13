@@ -5,6 +5,7 @@ from typing import Any
 
 import aiohttp
 from homeassistant.config_entries import (
+    SOURCE_REAUTH,
     SOURCE_RECONFIGURE,
     SOURCE_USER,
     ConfigEntryState,
@@ -778,3 +779,113 @@ async def test_reconfigure_aborts_when_another_entry_has_the_address(
     assert result["type"] is FlowResultType.ABORT
     assert result["reason"] == "already_configured"
     assert mock_config_entry.data == {CONF_HOST: TEST_HOST, CONF_PORT: TEST_PORT}
+
+
+async def _start_rejected_key_entry(
+    hass: HomeAssistant,
+    anki_responder: AnkiConnectResponder,
+    mock_config_entry: MockConfigEntry,
+    *,
+    required_key: str | None,
+) -> str:
+    """Set up an entry whose stored API key is rejected, returning its reauth flow ID."""
+    mock_config_entry.add_to_hass(hass)
+    hass.config_entries.async_update_entry(
+        mock_config_entry, data={**mock_config_entry.data, CONF_API_KEY: "wrong"}
+    )
+    anki_responder.require_key(required_key)
+    assert not await hass.config_entries.async_setup(mock_config_entry.entry_id)
+    await hass.async_block_till_done()
+
+    (flow,) = mock_config_entry.async_get_active_flows(hass, {SOURCE_REAUTH})
+    return flow["flow_id"]
+
+
+async def test_reauth_saves_new_api_key(
+    hass: HomeAssistant,
+    anki_responder: AnkiConnectResponder,
+    mock_config_entry: MockConfigEntry,
+) -> None:
+    """A corrected API key is saved, and the entry loads with it."""
+    flow_id = await _start_rejected_key_entry(
+        hass, anki_responder, mock_config_entry, required_key="secret"
+    )
+
+    result = await hass.config_entries.flow.async_configure(
+        flow_id, {CONF_API_KEY: "secret"}
+    )
+    await hass.async_block_till_done()
+
+    assert result["type"] is FlowResultType.ABORT
+    assert result["reason"] == "reauth_successful"
+    assert mock_config_entry.data == {
+        CONF_HOST: TEST_HOST,
+        CONF_PORT: TEST_PORT,
+        CONF_API_KEY: "secret",
+    }
+    assert mock_config_entry.state is ConfigEntryState.LOADED
+
+
+async def test_reauth_wrong_key_shows_error(
+    hass: HomeAssistant,
+    anki_responder: AnkiConnectResponder,
+    mock_config_entry: MockConfigEntry,
+) -> None:
+    """Another wrong key re-shows the reauth form, and the stored key is left alone."""
+    flow_id = await _start_rejected_key_entry(
+        hass, anki_responder, mock_config_entry, required_key="secret"
+    )
+
+    result = await hass.config_entries.flow.async_configure(
+        flow_id, {CONF_API_KEY: "still-wrong"}
+    )
+
+    assert result["type"] is FlowResultType.FORM
+    assert result["step_id"] == "reauth_confirm"
+    assert result["errors"] == {CONF_API_KEY: "invalid_api_key"}
+    assert mock_config_entry.data[CONF_API_KEY] == "wrong"
+
+
+async def test_reauth_blank_key_removes_it(
+    hass: HomeAssistant,
+    anki_responder: AnkiConnectResponder,
+    mock_config_entry: MockConfigEntry,
+) -> None:
+    """Leaving the key empty removes it when AnkiConnect no longer requires one."""
+    flow_id = await _start_rejected_key_entry(
+        hass, anki_responder, mock_config_entry, required_key=None
+    )
+
+    result = await hass.config_entries.flow.async_configure(flow_id, {CONF_API_KEY: ""})
+    await hass.async_block_till_done()
+
+    assert result["type"] is FlowResultType.ABORT
+    assert result["reason"] == "reauth_successful"
+    assert CONF_API_KEY not in mock_config_entry.data
+
+
+async def test_options_flow_add_query_reports_rejected_api_key(
+    hass: HomeAssistant,
+    anki_responder: AnkiConnectResponder,
+    mock_config_entry: MockConfigEntry,
+) -> None:
+    """A rejected API key while validating a query says so, rather than blaming the query."""
+    mock_config_entry.add_to_hass(hass)
+    hass.config_entries.async_update_entry(
+        mock_config_entry, data={**mock_config_entry.data, CONF_API_KEY: "wrong"}
+    )
+    anki_responder.require_key("secret")
+
+    result = await hass.config_entries.options.async_init(mock_config_entry.entry_id)
+    result = await hass.config_entries.options.async_configure(
+        result["flow_id"], {"next_step_id": "add_query"}
+    )
+    result = await hass.config_entries.options.async_configure(
+        result["flow_id"], {CONF_NAME: "Spanish due", CONF_QUERY: "deck:Spanish is:due"}
+    )
+
+    assert result["type"] is FlowResultType.FORM
+    assert result["errors"] == {"base": "invalid_api_key"}
+    assert (
+        len(list(mock_config_entry.async_get_active_flows(hass, {SOURCE_REAUTH}))) == 1
+    )

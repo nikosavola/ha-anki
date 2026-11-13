@@ -66,6 +66,12 @@ STEP_USER_DATA_SCHEMA = vol.Schema({
     ),
 })
 
+STEP_REAUTH_DATA_SCHEMA = vol.Schema({
+    vol.Optional(CONF_API_KEY): TextSelector(
+        TextSelectorConfig(type=TextSelectorType.PASSWORD)
+    ),
+})
+
 
 async def _async_validate_connection(
     hass: HomeAssistant,
@@ -205,6 +211,37 @@ class AnkiConnectConfigFlow(ConfigFlow, domain=DOMAIN):
             errors=errors,
         )
 
+    async def async_step_reauth(
+        self, _entry_data: Mapping[str, Any]
+    ) -> ConfigFlowResult:
+        """Start re-authentication after AnkiConnect rejects the stored API key."""
+        return await self.async_step_reauth_confirm()
+
+    async def async_step_reauth_confirm(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
+        """Ask for a new API key, keeping the stored host and port."""
+        entry = self._get_reauth_entry()
+        errors: dict[str, str] = {}
+
+        if user_input is not None:
+            data, errors = await _async_validate_connection(
+                self.hass,
+                entry.data[CONF_HOST],
+                entry.data[CONF_PORT],
+                user_input.get(CONF_API_KEY),
+            )
+            if data is not None:
+                return self.async_update_reload_and_abort(
+                    entry, data=_data_with_updates(entry, data)
+                )
+
+        return self.async_show_form(
+            step_id="reauth_confirm",
+            data_schema=STEP_REAUTH_DATA_SCHEMA,
+            errors=errors,
+        )
+
     @staticmethod
     @callback
     def async_get_options_flow(config_entry: ConfigEntry) -> AnkiConnectOptionsFlow:  # ruff: ignore[unused-static-method-argument]
@@ -320,6 +357,11 @@ class AnkiConnectOptionsFlow(OptionsFlowWithReload):
                     await client.count_cards(query)
                 except AnkiConnectConnectionError:
                     errors["base"] = "cannot_connect"
+                # Must come before AnkiConnectError, which it subclasses.
+                except AnkiConnectInvalidApiKeyError:
+                    errors["base"] = "invalid_api_key"
+                    # The poll may not have failed yet, so start reauth here too.
+                    self.config_entry.async_start_reauth(self.hass)
                 except AnkiConnectError:
                     errors[CONF_QUERY] = "invalid_query"
                 except Exception:

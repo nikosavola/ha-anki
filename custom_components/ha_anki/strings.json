@@ -28,6 +28,16 @@
           "port": "The port AnkiConnect is listening on.",
           "api_key": "Only needed if you set apiKey in AnkiConnect's config."
         }
+      },
+      "reauth_confirm": {
+        "title": "Re-authenticate AnkiConnect",
+        "description": "AnkiConnect rejected the saved API key. Enter the apiKey from Tools > Add-ons > AnkiConnect > Config in Anki, or leave this empty if that setting is blank.",
+        "data": {
+          "api_key": "API key"
+        },
+        "data_description": {
+          "api_key": "Only needed if you set apiKey in AnkiConnect's config."
+        }
       }
     },
     "error": {
@@ -41,7 +51,8 @@
     },
     "abort": {
       "already_configured": "This AnkiConnect instance is already configured.",
-      "reconfigure_successful": "The AnkiConnect connection was updated."
+      "reconfigure_successful": "The AnkiConnect connection was updated.",
+      "reauth_successful": "The AnkiConnect API key was updated."
     }
   },
   "options": {
@@ -88,6 +99,7 @@
       "name_exists": "A sensor with this name already exists.",
       "empty_query": "Enter a search query.",
       "invalid_query": "AnkiConnect rejected this search query. Check the syntax and try again.",
+      "invalid_api_key": "AnkiConnect rejected the API key. Re-authenticate this integration from the Integrations page to enter a new key.",
       "cannot_connect": "Failed to connect to AnkiConnect. Check that Anki is still running.",
       "unknown": "Unexpected error"
     }

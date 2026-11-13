@@ -41,6 +41,8 @@ _LOGGER = logging.getLogger(__name__)
 
 PLATFORMS = [Platform.SENSOR]
 
+CONFIG_SCHEMA = cv.config_entry_only_config_schema(DOMAIN)
+
 ADD_NOTE_SCHEMA: VolDictType = {
     vol.Required(CONF_CONFIG_ENTRY_ID): cv.string,
     vol.Required(ATTR_DECK_NAME): cv.string,

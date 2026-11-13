@@ -15,6 +15,24 @@ counts as sensors, via the [AnkiConnect](https://ankiweb.net/shared/info/2055492
 add-on. Anki must be running with AnkiConnect installed and reachable over the local
 network; this integration only polls its local HTTP API, it doesn't talk to AnkiWeb.
 
+## Quick start
+
+These steps cover the common case, with Anki open on your desktop.
+
+1. In Anki, go to **Tools > Add-ons > Get Add-ons**, and paste the code `2055492159` (AnkiConnect).
+
+1. Go to **Tools > Add-ons**, select **AnkiConnect**, and click **Config**. Change `"webBindAddress"` from `"127.0.0.1"` to `"0.0.0.0"`, then save and restart Anki. This is what lets Home Assistant reach Anki from another computer. Only do this on a network you trust, and firewall port `8765` so that only your Home Assistant host can reach it. See [Known limitations](#known-limitations) for more.
+
+   You can skip this step if Home Assistant runs directly on the same computer as Anki. Home Assistant in a VM or a Docker container usually can't reach `127.0.0.1` on that computer, so it still needs this step.
+
+1. Install the integration from HACS:
+
+   [![Open your Home Assistant instance and open a repository inside the Home Assistant Community Store.](https://my.home-assistant.io/badges/hacs_repository.svg)](https://my.home-assistant.io/redirect/hacs_repository/?owner=nikosavola&repository=ha-anki&category=integration)
+
+   Restart Home Assistant. Then go to **Settings > Devices & services > Add integration**, pick **ha-anki**, and enter the IP address of the computer running Anki as the **Host**. The port defaults to `8765`.
+
+Anki needs to stay open for the sensors to update. For an always-on setup, see the [headless server guide](https://github.com/nikosavola/ha-anki/blob/main/docs/headless.md).
+
 ## How it works
 
 AnkiConnect is an Anki add-on that exposes a local HTTP API; this integration is primarily a
@@ -40,25 +58,12 @@ The only path that leaves your network is Anki's own AnkiWeb sync. This integrat
 Anki to trigger it (see [Poll and auto-sync intervals](#poll-and-auto-sync-intervals)), but
 it never talks to AnkiWeb itself.
 
-## Requirements
-
-- Anki desktop, running, with the AnkiConnect add-on installed
-- AnkiConnect reachable from Home Assistant over the network (default port `8765`)
-
-Anki has to actually be running for AnkiConnect to answer, which usually means it's
-running on someone's desktop. To run it unattended on a server instead, with no monitor,
-starting on boot, and syncing to AnkiWeb on a schedule, see
-[Running Anki on a headless server](docs/headless.md).
-
 ## Installation
 
 ### HACS
 
-[![Open your Home Assistant instance and open a repository inside the Home Assistant Community Store.](https://my.home-assistant.io/badges/hacs_repository.svg)](https://my.home-assistant.io/redirect/hacs_repository/?owner=nikosavola&repository=ha-anki&category=integration)
-
-1. Add this repository to HACS as a custom repository of type *Integration* (the badge
-   above does this for you), then download **ha-anki** from HACS.
-1. Restart Home Assistant.
+Use the badge in the [Quick start](#quick-start), or search for **ha-anki** in HACS, then
+download it and restart Home Assistant.
 
 ### Manual
 
@@ -67,29 +72,28 @@ directory and restart Home Assistant.
 
 ## Configuration
 
-Go to **Settings → Devices & services → Add integration**, pick **ha-anki**, and
-enter the host and port of the machine running Anki. Home Assistant polls that host
-every 5 minutes; it does not fetch on demand, so multiple sensors never generate
-duplicate requests.
+The [Quick start](#quick-start) covers adding the integration. Home Assistant polls
+AnkiConnect every 5 minutes. It does not fetch on demand, so multiple sensors never
+generate duplicate requests.
 
 ### Poll and auto-sync intervals
 
-From **Settings → Devices & services → ha-anki → Configure → set_interval** you can
+From **Settings > Devices & services > ha-anki > Configure > set_interval** you can
 adjust two independent intervals, both in minutes:
 
-- **Scan interval** — how often Home Assistant polls AnkiConnect for sensor state
+- **Scan interval**: how often Home Assistant polls AnkiConnect for sensor state
   (card counts, reviewed today). Defaults to 5 minutes; this only reads from
   AnkiConnect's local collection, it never talks to AnkiWeb.
-- **Auto-sync interval** — how often this integration asks AnkiConnect to sync the
+- **Auto-sync interval**: how often this integration asks AnkiConnect to sync the
   Anki collection with AnkiWeb (the same action as Anki's own sync button), then
   refreshes sensor state. Set to `0` (the default) to disable it entirely and rely
   on the manual `ha_anki.sync` service, or on Anki's own sync on open/close.
 
 A sync slower than its own interval is never run twice concurrently: a still-running
 sync makes the next scheduled tick a no-op instead of overlapping it. If you already
-sync AnkiWeb outside Home Assistant, e.g. via the systemd timer in
-[Running Anki on a headless server](docs/headless.md#6-sync-to-ankiweb-periodically-in-the-background)
-below, leave this at `0` so the two don't fight over the same sync.
+sync AnkiWeb outside Home Assistant, e.g. via the systemd timer in step 6 of the
+[headless server guide](https://github.com/nikosavola/ha-anki/blob/main/docs/headless.md#6-sync-to-ankiweb-periodically-in-the-background),
+leave this at `0` so the two don't fight over the same sync.
 
 ## Supported functionality
 
@@ -125,7 +129,7 @@ sequenceDiagram
 ### Custom query sensors
 
 Beyond those four, you can add a sensor for any AnkiConnect search query from
-**Settings → Devices & services → ha-anki → Configure**. It's the same
+**Settings > Devices & services > ha-anki > Configure**. It's the same
 query syntax as Anki's own card browser, documented in full at
 [docs.ankiweb.net/searching.html](https://docs.ankiweb.net/searching.html);
 AnkiConnect just runs it through `findCards` and counts the results, the same

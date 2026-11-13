@@ -325,8 +325,12 @@ async def test_removed_custom_query_prunes_stale_entity(
     await hass.async_block_till_done()
     assert _maybe_entity_id(hass, mock_config_entry, "custom_spanish_due") is not None
 
-    hass.config_entries.async_update_entry(
-        mock_config_entry, options={CONF_CUSTOM_QUERIES: {}}
+    result = await hass.config_entries.options.async_init(mock_config_entry.entry_id)
+    result = await hass.config_entries.options.async_configure(
+        result["flow_id"], {"next_step_id": "remove_query"}
+    )
+    await hass.config_entries.options.async_configure(
+        result["flow_id"], {CONF_CUSTOM_QUERIES: ["spanish_due"]}
     )
     await hass.async_block_till_done()
 

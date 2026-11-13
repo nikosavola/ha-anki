@@ -231,6 +231,7 @@ async def test_options_flow_add_query_works_when_entry_not_loaded(
     result = await hass.config_entries.options.async_configure(
         result["flow_id"], {CONF_NAME: "Spanish due", CONF_QUERY: "deck:Spanish is:due"}
     )
+    await hass.async_block_till_done()
 
     assert result["type"] is FlowResultType.CREATE_ENTRY
     assert mock_config_entry.options == {

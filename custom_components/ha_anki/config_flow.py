@@ -9,7 +9,7 @@ from homeassistant.config_entries import (
     ConfigEntry,
     ConfigFlow,
     ConfigFlowResult,
-    OptionsFlow,
+    OptionsFlowWithReload,
 )
 from homeassistant.const import CONF_HOST, CONF_NAME, CONF_PORT, CONF_SCAN_INTERVAL
 from homeassistant.core import callback
@@ -108,7 +108,7 @@ def _validate_new_query(
     return slug, errors
 
 
-class AnkiConnectOptionsFlow(OptionsFlow):
+class AnkiConnectOptionsFlow(OptionsFlowWithReload):
     """Add or remove custom AnkiConnect search-query sensors.
 
     Each step persists immediately via async_create_entry rather than

@@ -115,12 +115,13 @@ class AnkiConnectClient:
         payload = self._action(action, params)
 
         try:
-            async with self._session.post(
-                self._url, json=payload, timeout=request_timeout
-            ) as response:
-                response.raise_for_status()
-                # content_type=None: AnkiConnect doesn't set a JSON content type.
-                body = await response.json(content_type=None)
+            try:
+                body = await self._post(payload, request_timeout)
+            except aiohttp.ServerDisconnectedError:
+                # AnkiConnect closes the socket after every reply without a
+                # Connection: close header, so a pooled connection is dead on
+                # reuse. It replies before closing, so the request never ran.
+                body = await self._post(payload, request_timeout)
         except aiohttp.ClientConnectorError as err:
             raise AnkiConnectUnreachableError(str(err)) from err
         # Must come before ClientError: aiohttp's timeouts subclass both.
@@ -140,6 +141,22 @@ class AnkiConnectClient:
                 raise AnkiConnectInvalidApiKeyError(body["error"])
             raise AnkiConnectApiError(body["error"])
         return body["result"]
+
+    async def _post(
+        self, payload: dict[str, Any], request_timeout: aiohttp.ClientTimeout
+    ) -> Any:
+        """POST one payload and return the decoded JSON body.
+
+        Returns:
+            The decoded response body.
+
+        """
+        async with self._session.post(
+            self._url, json=payload, timeout=request_timeout
+        ) as response:
+            response.raise_for_status()
+            # content_type=None: AnkiConnect doesn't set a JSON content type.
+            return await response.json(content_type=None)
 
     async def get_version(self) -> int:
         """Return the AnkiConnect API version, also used as a connectivity check."""

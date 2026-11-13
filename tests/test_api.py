@@ -3,11 +3,15 @@
 from collections.abc import AsyncGenerator, Callable
 from functools import partial
 from http import HTTPStatus
+from typing import Any
 
 import aiohttp
 from homeassistant.core import HomeAssistant
 import pytest
-from pytest_homeassistant_custom_component.test_util.aiohttp import AiohttpClientMocker
+from pytest_homeassistant_custom_component.test_util.aiohttp import (
+    AiohttpClientMocker,
+    AiohttpClientMockResponse,
+)
 
 from custom_components.ha_anki.api import (
     SYNC_REQUEST_TIMEOUT,
@@ -349,3 +353,35 @@ async def test_request_raises_invalid_api_key_when_key_is_missing(
 
     with pytest.raises(AnkiConnectInvalidApiKeyError):
         await client.get_version()
+
+
+async def test_request_retries_once_when_server_drops_pooled_connection(
+    client: AnkiConnectClient, aioclient_mock: AiohttpClientMocker
+) -> None:
+    """A stale keep-alive socket gets one retry instead of failing the request."""
+    calls = 0
+
+    async def respond(
+        method: str, url: Any, _data: dict[str, Any]
+    ) -> AiohttpClientMockResponse:
+        nonlocal calls
+        calls += 1
+        if calls == 1:
+            raise aiohttp.ServerDisconnectedError
+        return AiohttpClientMockResponse(method, url, json={"result": 6, "error": None})
+
+    aioclient_mock.post(TEST_URL, side_effect=respond)
+
+    assert await client.get_version() == 6
+    assert calls == 2
+
+
+async def test_request_gives_up_after_second_disconnect(
+    client: AnkiConnectClient, aioclient_mock: AiohttpClientMocker
+) -> None:
+    """A server that keeps disconnecting still surfaces as a connection error."""
+    aioclient_mock.post(TEST_URL, exc=aiohttp.ServerDisconnectedError())
+
+    with pytest.raises(AnkiConnectConnectionError):
+        await client.get_version()
+    assert len(aioclient_mock.mock_calls) == 2

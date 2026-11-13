@@ -327,6 +327,19 @@ async def test_request_raises_invalid_api_key_when_key_is_wrong(
         await make_client(api_key="wrong").get_version()
 
 
+async def test_ipv6_host_is_bracketed_in_url(
+    hass: HomeAssistant, aioclient_mock: AiohttpClientMocker
+) -> None:
+    """An IPv6 host is sent in brackets, so its colons aren't read as the port."""
+    aioclient_mock.post("http://[fe80::1]:8765", json={"result": 6, "error": None})
+    session = aioclient_mock.create_session(hass.loop)
+    try:
+        client = AnkiConnectClient(session, "fe80::1", TEST_PORT)
+        assert await client.get_version() == 6
+    finally:
+        await session.close()
+
+
 async def test_request_raises_invalid_api_key_when_key_is_missing(
     client: AnkiConnectClient,
     anki_responder: AnkiConnectResponder,

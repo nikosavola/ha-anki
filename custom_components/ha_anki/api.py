@@ -65,7 +65,9 @@ class AnkiConnectClient:
     ) -> None:
         """Initialize the client with an existing aiohttp session."""
         self._session = session
-        self._url = f"http://{host}:{port}"
+        # An IPv6 literal needs brackets in a URL; hostnames and IPv4 never contain a colon.
+        netloc = f"[{host}]" if ":" in host else host
+        self._url = f"http://{netloc}:{port}"
         self._api_key = api_key
 
     def _action(

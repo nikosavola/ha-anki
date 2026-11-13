@@ -68,6 +68,38 @@ async def test_user_flow_normalizes_host(
     assert result["data"][CONF_HOST] == TEST_HOST
 
 
+async def test_user_flow_accepts_pasted_url(
+    hass: HomeAssistant, anki_responder: AnkiConnectResponder
+) -> None:
+    """A pasted URL is split into host and port, and its port overrides the port field."""
+    result = await hass.config_entries.flow.async_init(
+        DOMAIN, context={"source": SOURCE_USER}
+    )
+    result = await hass.config_entries.flow.async_configure(
+        result["flow_id"],
+        {CONF_HOST: f" http://{TEST_HOST}:{TEST_PORT}/ ", CONF_PORT: 1234},
+    )
+
+    assert result["type"] is FlowResultType.CREATE_ENTRY
+    assert result["data"] == {CONF_HOST: TEST_HOST, CONF_PORT: TEST_PORT}
+    assert result["result"].unique_id == f"{TEST_HOST}:{TEST_PORT}"
+
+
+async def test_user_flow_rejects_host_without_name(
+    hass: HomeAssistant, anki_responder: AnkiConnectResponder
+) -> None:
+    """A host field that is only a scheme re-shows the form with invalid_host on the field."""
+    result = await hass.config_entries.flow.async_init(
+        DOMAIN, context={"source": SOURCE_USER}
+    )
+    result = await hass.config_entries.flow.async_configure(
+        result["flow_id"], {CONF_HOST: "http://", CONF_PORT: TEST_PORT}
+    )
+
+    assert result["type"] is FlowResultType.FORM
+    assert result["errors"] == {CONF_HOST: "invalid_host"}
+
+
 async def test_user_flow_api_error_cannot_connect(
     hass: HomeAssistant, anki_responder: AnkiConnectResponder
 ) -> None:

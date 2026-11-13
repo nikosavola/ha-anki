@@ -6,11 +6,13 @@
         "description": "Enter the address of the machine running Anki with the AnkiConnect add-on installed.",
         "data": {
           "host": "Host",
-          "port": "Port"
+          "port": "Port",
+          "api_key": "API key"
         },
         "data_description": {
           "host": "The IP address or hostname of the machine running Anki.",
-          "port": "The port AnkiConnect is listening on."
+          "port": "The port AnkiConnect is listening on.",
+          "api_key": "Only needed if you set apiKey in AnkiConnect's config."
         }
       }
     },
@@ -19,6 +21,7 @@
       "cannot_connect_refused": "Could not connect to Anki. Check that Anki is running with the AnkiConnect add-on installed. If Home Assistant runs on another computer, go to Tools > Add-ons > AnkiConnect > Config in Anki, set webBindAddress to 0.0.0.0, then restart Anki.",
       "timeout_connect": "Timed out connecting to Anki. Check the IP address, and make sure a firewall isn't blocking the port.",
       "not_ankiconnect": "Something other than AnkiConnect answered at this host and port. Check the port number, and make sure AnkiConnect is installed.",
+      "invalid_api_key": "AnkiConnect rejected the API key. Enter the apiKey from Tools > Add-ons > AnkiConnect > Config in Anki, or leave this empty if that setting is blank.",
       "unknown": "Unexpected error"
     },
     "abort": {

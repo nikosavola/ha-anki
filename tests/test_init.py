@@ -5,7 +5,7 @@ from datetime import timedelta
 import logging
 
 from homeassistant.config_entries import ConfigEntryState
-from homeassistant.const import CONF_SCAN_INTERVAL
+from homeassistant.const import CONF_API_KEY, CONF_SCAN_INTERVAL
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import HomeAssistantError, ServiceValidationError
 from homeassistant.helpers import entity_registry as er
@@ -22,6 +22,25 @@ from custom_components.ha_anki.const import (
 )
 
 from .conftest import AnkiConnectResponder
+
+
+async def test_setup_sends_configured_api_key(
+    hass: HomeAssistant,
+    anki_responder: AnkiConnectResponder,
+    mock_config_entry: MockConfigEntry,
+) -> None:
+    """The entry's apiKey reaches the client, so setup succeeds when one is required."""
+    anki_responder.require_key("secret")
+    mock_config_entry.add_to_hass(hass)
+    hass.config_entries.async_update_entry(
+        mock_config_entry,
+        data={**mock_config_entry.data, CONF_API_KEY: "secret"},
+    )
+
+    assert await hass.config_entries.async_setup(mock_config_entry.entry_id)
+    await hass.async_block_till_done()
+
+    assert mock_config_entry.state is ConfigEntryState.LOADED
 
 
 async def test_add_note_service_returns_note_id_and_refreshes(

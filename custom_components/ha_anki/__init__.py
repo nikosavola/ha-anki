@@ -6,7 +6,7 @@ from datetime import datetime, timedelta
 import logging
 
 from homeassistant.config_entries import ConfigEntryState
-from homeassistant.const import CONF_HOST, CONF_PORT, Platform
+from homeassistant.const import CONF_API_KEY, CONF_HOST, CONF_PORT, Platform
 from homeassistant.core import (
     HomeAssistant,
     ServiceCall,
@@ -112,7 +112,12 @@ async def _async_add_note(call: ServiceCall) -> ServiceResponse:
 async def async_setup_entry(hass: HomeAssistant, entry: AnkiConnectConfigEntry) -> bool:
     """Set up AnkiConnect from a config entry."""
     session = async_get_clientsession(hass)
-    client = AnkiConnectClient(session, entry.data[CONF_HOST], entry.data[CONF_PORT])
+    client = AnkiConnectClient(
+        session,
+        entry.data[CONF_HOST],
+        entry.data[CONF_PORT],
+        api_key=entry.data.get(CONF_API_KEY),
+    )
     coordinator = AnkiConnectDataUpdateCoordinator(hass, entry, client)
     await coordinator.async_config_entry_first_refresh()
 

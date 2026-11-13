@@ -18,6 +18,9 @@ MIN_AUTO_SYNC_INTERVAL_MINUTES = 0
 
 ANKICONNECT_API_VERSION = 6
 
+# AnkiConnect has no error codes, so match its text for a missing or wrong apiKey.
+ANKICONNECT_INVALID_KEY_ERROR = "valid api key must be provided"
+
 # Sensor keys, also used as translation keys, mapped to their findCards query.
 CARD_QUERIES = {
     "cards_due": "is:due",

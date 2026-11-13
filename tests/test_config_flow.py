@@ -5,7 +5,13 @@ from typing import Any
 
 import aiohttp
 from homeassistant.config_entries import SOURCE_USER
-from homeassistant.const import CONF_HOST, CONF_NAME, CONF_PORT, CONF_SCAN_INTERVAL
+from homeassistant.const import (
+    CONF_API_KEY,
+    CONF_HOST,
+    CONF_NAME,
+    CONF_PORT,
+    CONF_SCAN_INTERVAL,
+)
 from homeassistant.core import HomeAssistant
 from homeassistant.data_entry_flow import FlowResultType
 import pytest
@@ -135,6 +141,89 @@ async def test_user_flow_shows_specific_connection_error(
 
     assert result["type"] is FlowResultType.FORM
     assert result["errors"] == {"base": expected_error}
+
+
+async def test_user_flow_saves_api_key(
+    hass: HomeAssistant, anki_responder: AnkiConnectResponder
+) -> None:
+    """An apiKey entered in the form is saved on the new entry."""
+    anki_responder.require_key("secret")
+
+    result = await hass.config_entries.flow.async_init(
+        DOMAIN, context={"source": SOURCE_USER}
+    )
+    result = await hass.config_entries.flow.async_configure(
+        result["flow_id"],
+        {CONF_HOST: TEST_HOST, CONF_PORT: TEST_PORT, CONF_API_KEY: "secret"},
+    )
+
+    assert result["type"] is FlowResultType.CREATE_ENTRY
+    assert result["data"] == {
+        CONF_HOST: TEST_HOST,
+        CONF_PORT: TEST_PORT,
+        CONF_API_KEY: "secret",
+    }
+
+
+async def test_user_flow_leaves_blank_api_key_out_of_entry(
+    hass: HomeAssistant, anki_responder: AnkiConnectResponder
+) -> None:
+    """A blank apiKey field means no key, so none is saved."""
+    result = await hass.config_entries.flow.async_init(
+        DOMAIN, context={"source": SOURCE_USER}
+    )
+    result = await hass.config_entries.flow.async_configure(
+        result["flow_id"],
+        {CONF_HOST: TEST_HOST, CONF_PORT: TEST_PORT, CONF_API_KEY: "   "},
+    )
+
+    assert result["type"] is FlowResultType.CREATE_ENTRY
+    assert CONF_API_KEY not in result["data"]
+
+
+@pytest.mark.parametrize("api_key", ["wrong", ""], ids=["wrong-key", "missing-key"])
+async def test_user_flow_invalid_api_key(
+    hass: HomeAssistant, anki_responder: AnkiConnectResponder, api_key: str
+) -> None:
+    """A missing or wrong apiKey re-shows the form with an error on the field."""
+    anki_responder.require_key("secret")
+
+    result = await hass.config_entries.flow.async_init(
+        DOMAIN, context={"source": SOURCE_USER}
+    )
+    result = await hass.config_entries.flow.async_configure(
+        result["flow_id"],
+        {CONF_HOST: TEST_HOST, CONF_PORT: TEST_PORT, CONF_API_KEY: api_key},
+    )
+
+    assert result["type"] is FlowResultType.FORM
+    assert result["errors"] == {CONF_API_KEY: "invalid_api_key"}
+
+
+async def test_options_flow_add_query_sends_api_key(
+    hass: HomeAssistant,
+    anki_responder: AnkiConnectResponder,
+    mock_config_entry: MockConfigEntry,
+) -> None:
+    """Validating a new query uses the entry's apiKey, so it works when one is required."""
+    mock_config_entry.add_to_hass(hass)
+    hass.config_entries.async_update_entry(
+        mock_config_entry,
+        data={**mock_config_entry.data, CONF_API_KEY: "secret"},
+    )
+    anki_responder.require_key("secret")
+    anki_responder.set_cards("deck:Spanish is:due", [1])
+
+    result = await hass.config_entries.options.async_init(mock_config_entry.entry_id)
+    result = await hass.config_entries.options.async_configure(
+        result["flow_id"], {"next_step_id": "add_query"}
+    )
+    result = await hass.config_entries.options.async_configure(
+        result["flow_id"], {CONF_NAME: "Spanish due", CONF_QUERY: "deck:Spanish is:due"}
+    )
+    await hass.async_block_till_done()
+
+    assert result["type"] is FlowResultType.CREATE_ENTRY
 
 
 async def test_user_flow_unexpected_error(

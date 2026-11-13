@@ -12,6 +12,7 @@ from .const import (
     ANKICONNECT_API_VERSION,
     ANKICONNECT_INVALID_KEY_ERROR,
     CUSTOM_QUERY_KEY_PREFIX,
+    READ_ONLY_ACTIONS,
     REVIEWED_TODAY_KEY,
 )
 
@@ -115,13 +116,10 @@ class AnkiConnectClient:
         payload = self._action(action, params)
 
         try:
-            try:
-                body = await self._post(payload, request_timeout)
-            except aiohttp.ServerDisconnectedError:
-                # AnkiConnect closes the socket after every reply without a
-                # Connection: close header, so a pooled connection is dead on
-                # reuse. It replies before closing, so the request never ran.
-                body = await self._post(payload, request_timeout)
+            body = await self._post_with_retry(action, payload, request_timeout)
+        # Must come before ClientConnectorError: a DNS failure isn't a refusal.
+        except aiohttp.ClientConnectorDNSError as err:
+            raise AnkiConnectConnectionError(str(err)) from err
         except aiohttp.ClientConnectorError as err:
             raise AnkiConnectUnreachableError(str(err)) from err
         # Must come before ClientError: aiohttp's timeouts subclass both.
@@ -141,6 +139,33 @@ class AnkiConnectClient:
                 raise AnkiConnectInvalidApiKeyError(body["error"])
             raise AnkiConnectApiError(body["error"])
         return body["result"]
+
+    async def _post_with_retry(
+        self,
+        action: str,
+        payload: dict[str, Any],
+        request_timeout: aiohttp.ClientTimeout,
+    ) -> Any:
+        """POST a payload, retrying once on a dropped connection for read-only actions.
+
+        AnkiConnect closes the socket after each reply, so a pooled connection
+        can be stale. A disconnect doesn't prove a write didn't run, so only
+        read-only actions are retried.
+
+        Returns:
+            The decoded response body.
+
+        Raises:
+            aiohttp.ServerDisconnectedError: If the connection drops during an
+                action that isn't read-only.
+
+        """
+        try:
+            return await self._post(payload, request_timeout)
+        except aiohttp.ServerDisconnectedError:
+            if action not in READ_ONLY_ACTIONS:
+                raise
+        return await self._post(payload, request_timeout)
 
     async def _post(
         self, payload: dict[str, Any], request_timeout: aiohttp.ClientTimeout
@@ -273,8 +298,6 @@ class AnkiConnectClient:
         Raises:
             AnkiConnectApiError: If AnkiConnect reports an error for the
                 overall request or for a non-tolerated sub-action.
-            AnkiConnectInvalidApiKeyError: If AnkiConnect rejects a missing or
-                wrong apiKey.
             AnkiConnectUnexpectedResponseError: If the reply doesn't have one
                 result per action.
 
@@ -297,8 +320,6 @@ class AnkiConnectClient:
                     _LOGGER.warning("AnkiConnect action failed, ignoring: %s", error)
                     values.append(None)
                     continue
-                if error == ANKICONNECT_INVALID_KEY_ERROR:
-                    raise AnkiConnectInvalidApiKeyError(error)
                 raise AnkiConnectApiError(error)
             values.append(sub_result["result"])
         return values

@@ -6,10 +6,10 @@ covers running it unattended on a Linux server: no monitor, no login session, sy
 AnkiWeb on its own. "Headless" here means "running against a virtual display", since Anki is
 a desktop (Qt) app with no dedicated headless mode.
 
-Docker is the quickest route, so it comes first. If you want fine-grained control over the
+On Home Assistant OS, the [Anki app](https://github.com/nikosavola/ha-anki-app) does all of this for you. Elsewhere, Docker is the quickest route, so it comes first. If you want fine-grained control over the
 systemd units, skip ahead to [Manual setup with systemd](#manual-setup-with-systemd).
 
-## Docker alternative
+## Docker
 
 Community Docker images bundle Anki, a virtual display, and AnkiConnect together, trading
 some control over the setup for a single `docker run`:

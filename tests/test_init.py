@@ -4,7 +4,7 @@ import asyncio
 from datetime import timedelta
 import logging
 
-from homeassistant.config_entries import ConfigEntryState
+from homeassistant.config_entries import SOURCE_REAUTH, ConfigEntryState
 from homeassistant.const import CONF_API_KEY, CONF_SCAN_INTERVAL
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import HomeAssistantError, ServiceValidationError
@@ -555,3 +555,23 @@ async def test_auto_sync_guard_persists_across_reload(
     async_fire_time_changed(hass)
     await hass.async_block_till_done()
     assert anki_responder.sync_call_count == 1
+
+
+async def test_key_rejected_mid_poll_starts_reauth(
+    hass: HomeAssistant,
+    anki_responder: AnkiConnectResponder,
+    mock_config_entry: MockConfigEntry,
+    freezer,
+) -> None:
+    """An apiKey that stops working after setup starts reauth on the next poll."""
+    mock_config_entry.add_to_hass(hass)
+    assert await hass.config_entries.async_setup(mock_config_entry.entry_id)
+    await hass.async_block_till_done()
+    anki_responder.require_key("secret")
+
+    freezer.tick(timedelta(minutes=10))
+    async_fire_time_changed(hass)
+    await hass.async_block_till_done()
+
+    (flow,) = mock_config_entry.async_get_active_flows(hass, {SOURCE_REAUTH})
+    assert flow["flow_id"]

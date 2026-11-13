@@ -21,7 +21,11 @@ def normalize_host(raw: str, port: int) -> tuple[str, int] | None:
         nothing usable is left.
 
     """
-    text = raw.strip().lower().removeprefix("http://").removeprefix("https://")
+    text = raw.strip().lower()
+    # Otherwise "ws://host" would parse as the host "ws". AnkiConnect is plain http only.
+    if "://" in text and not text.startswith("http://"):
+        return None
+    text = text.removeprefix("http://")
     try:
         host, embedded_port = _split_host_port(text)
     except ValueError:

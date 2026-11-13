@@ -17,7 +17,7 @@
       },
       "reconfigure": {
         "title": "Update the AnkiConnect connection",
-        "description": "Change the address or API key if the computer running Anki has a new IP address or its API key changed. Your custom queries are kept.",
+        "description": "Update the address if the computer running Anki has a new IP address, or the API key if you changed it in AnkiConnect. Your custom queries are kept.",
         "data": {
           "host": "Host",
           "port": "Port",
@@ -45,10 +45,10 @@
       }
     },
     "error": {
-      "invalid_host": "Enter an IP address or hostname, such as 192.168.1.20, or a URL such as http://192.168.1.20:8765.",
+      "invalid_host": "Enter an IP address or hostname, such as 192.168.1.20, or a URL such as http://192.168.1.20:8765. AnkiConnect only supports http, not https.",
       "cannot_connect": "Failed to connect to AnkiConnect. Check the host and port, and make sure Anki is running with the AnkiConnect add-on installed.",
       "cannot_connect_refused": "Could not connect to Anki. Check that Anki is running with the AnkiConnect add-on installed. If Home Assistant runs on another computer, go to Tools > Add-ons > AnkiConnect > Config in Anki, set webBindAddress to 0.0.0.0, then restart Anki.",
-      "timeout_connect": "Timed out connecting to Anki. Check the IP address, and make sure a firewall isn't blocking the port.",
+      "timeout_connect": "Timed out connecting to Anki. Check the IP address and that a firewall isn't blocking the port. Anki may be busy or showing a dialog, so try again once it is idle.",
       "not_ankiconnect": "Something other than AnkiConnect answered at this host and port. Check the port number, and make sure AnkiConnect is installed.",
       "invalid_api_key": "AnkiConnect rejected the API key. Enter the apiKey from Tools > Add-ons > AnkiConnect > Config in Anki, or leave this empty if that setting is blank.",
       "unknown": "Unexpected error"
@@ -56,7 +56,8 @@
     "abort": {
       "already_configured": "This AnkiConnect instance is already configured.",
       "already_in_progress": "Setup for this AnkiConnect instance is already in progress.",
-      "invalid_host": "The Anki app sent a host name that could not be used.",
+      "invalid_host": "The Anki app sent an address that could not be used.",
+      "managed_by_app": "The Anki app manages this entry, so change the app's settings instead.",
       "reconfigure_successful": "The AnkiConnect connection was updated.",
       "reauth_successful": "The AnkiConnect API key was updated."
     }

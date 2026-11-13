@@ -17,7 +17,8 @@ from custom_components.ha_anki.util import normalize_host
         ),
         pytest.param(" MyPC.local ", 8765, ("mypc.local", 8765), id="whitespace"),
         pytest.param("192.168.1.20", 9000, ("192.168.1.20", 9000), id="port-field"),
-        pytest.param("https://x/path", 8765, ("x", 8765), id="https-path"),
+        pytest.param("https://x/path", 8765, None, id="https-rejected"),
+        pytest.param("ws://192.168.1.20", 8765, None, id="ws-rejected"),
         pytest.param("http://mypc.local", 8765, ("mypc.local", 8765), id="url-no-port"),
         pytest.param(
             "http://mypc.local:9000",

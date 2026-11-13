@@ -21,7 +21,7 @@ These steps cover the common case, with Anki open on your desktop.
 
 1. In Anki, go to **Tools > Add-ons > Get Add-ons**, and paste the code `2055492159` (AnkiConnect).
 
-1. Go to **Tools > Add-ons**, select **AnkiConnect**, and click **Config**. Change `"webBindAddress"` from `"127.0.0.1"` to `"0.0.0.0"`, then save and restart Anki. This is what lets Home Assistant reach Anki from another computer. Only do this on a network you trust, and firewall port `8765` so that only your Home Assistant host can reach it. See [Known limitations](#known-limitations) for more.
+1. Go to **Tools > Add-ons**, select **AnkiConnect**, and click **Config**. Change `"webBindAddress"` from `"127.0.0.1"` to `"0.0.0.0"`, then save and restart Anki. This lets Home Assistant reach Anki from another computer, but it also opens AnkiConnect to your whole network. Only do this on a network you trust, set an `apiKey` in the same config, and firewall port `8765` so that only your Home Assistant host can reach it. See [Known limitations](#known-limitations) for more.
 
    You can skip this step if Home Assistant runs directly on the same computer as Anki. Home Assistant in a VM or a Docker container usually can't reach `127.0.0.1` on that computer, so it still needs this step.
 
@@ -37,11 +37,12 @@ Anki needs to stay open for the sensors to update. For an always-on setup, see t
 
 If Home Assistant runs on Home Assistant OS, you can skip the desktop steps and run Anki inside Home Assistant with the companion Anki app. The app keeps Anki running headless and announces it to Home Assistant, so you don't have to enter an address.
 
+1. Install this integration from HACS as in step 3 above, and restart Home Assistant. Home Assistant ignores the app's announcement until the integration is installed.
 1. In **Settings > Apps > App store**, add this repository: <https://github.com/nikosavola/ha-anki-app> <!-- TODO: publish ha-anki-app -->
 1. Install the **Anki** app. On its **Configuration** tab, enter your AnkiWeb email and password, then start the app.
 1. Under **Settings > Devices & services**, accept **Discovered: ha-anki** and click **Submit**.
 
-The headless Anki in the app only syncs at login, so this integration syncs with AnkiWeb every 30 minutes by default. You can change that under **Configure** on the integration.
+The headless Anki in the app only syncs at login, so this integration syncs with AnkiWeb every 30 minutes by default. You can change that under **Configure** on the integration. Removing the app leaves the integration entry in place, so delete it by hand under **Settings > Devices & services**.
 
 ## How it works
 

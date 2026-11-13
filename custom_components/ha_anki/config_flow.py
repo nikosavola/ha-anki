@@ -11,10 +11,21 @@ from homeassistant.config_entries import (
     ConfigFlowResult,
     OptionsFlowWithReload,
 )
-from homeassistant.const import CONF_HOST, CONF_NAME, CONF_PORT, CONF_SCAN_INTERVAL
+from homeassistant.const import (
+    CONF_API_KEY,
+    CONF_HOST,
+    CONF_NAME,
+    CONF_PORT,
+    CONF_SCAN_INTERVAL,
+)
 from homeassistant.core import callback
 from homeassistant.helpers import config_validation as cv
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
+from homeassistant.helpers.selector import (
+    TextSelector,
+    TextSelectorConfig,
+    TextSelectorType,
+)
 from homeassistant.util import slugify
 import voluptuous as vol
 
@@ -22,6 +33,7 @@ from .api import (
     AnkiConnectClient,
     AnkiConnectConnectionError,
     AnkiConnectError,
+    AnkiConnectInvalidApiKeyError,
     AnkiConnectTimeoutError,
     AnkiConnectUnexpectedResponseError,
     AnkiConnectUnreachableError,
@@ -47,6 +59,9 @@ STEP_USER_DATA_SCHEMA = vol.Schema({
     vol.Required(CONF_PORT, default=DEFAULT_PORT): vol.All(
         vol.Coerce(int), vol.Range(min=1, max=65535)
     ),
+    vol.Optional(CONF_API_KEY): TextSelector(
+        TextSelectorConfig(type=TextSelectorType.PASSWORD)
+    ),
 })
 
 
@@ -65,11 +80,16 @@ class AnkiConnectConfigFlow(ConfigFlow, domain=DOMAIN):
         if user_input is not None:
             host = user_input[CONF_HOST].strip().lower()
             port = user_input[CONF_PORT]
+            api_key = (user_input.get(CONF_API_KEY) or "").strip() or None
             await self.async_set_unique_id(f"{host}:{port}")
             self._abort_if_unique_id_configured()
 
-            data = {CONF_HOST: host, CONF_PORT: port}
-            client = AnkiConnectClient(async_get_clientsession(self.hass), host, port)
+            data: dict[str, Any] = {CONF_HOST: host, CONF_PORT: port}
+            if api_key is not None:
+                data[CONF_API_KEY] = api_key
+            client = AnkiConnectClient(
+                async_get_clientsession(self.hass), host, port, api_key=api_key
+            )
             try:
                 await client.get_version()
             except AnkiConnectUnreachableError:
@@ -78,6 +98,8 @@ class AnkiConnectConfigFlow(ConfigFlow, domain=DOMAIN):
                 errors["base"] = "timeout_connect"
             except AnkiConnectUnexpectedResponseError:
                 errors["base"] = "not_ankiconnect"
+            except AnkiConnectInvalidApiKeyError:
+                errors[CONF_API_KEY] = "invalid_api_key"
             except AnkiConnectError:
                 errors["base"] = "cannot_connect"
             except Exception:
@@ -199,6 +221,7 @@ class AnkiConnectOptionsFlow(OptionsFlowWithReload):
                     async_get_clientsession(self.hass),
                     self.config_entry.data[CONF_HOST],
                     self.config_entry.data[CONF_PORT],
+                    api_key=self.config_entry.data.get(CONF_API_KEY),
                 )
                 try:
                     await client.count_cards(query)

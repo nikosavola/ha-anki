@@ -21,6 +21,9 @@ TEST_HOST = "192.168.1.10"
 TEST_PORT = 8765
 TEST_URL = f"http://{TEST_HOST}:{TEST_PORT}"
 
+# AnkiConnect's exact reply to a missing or wrong apiKey.
+INVALID_KEY_ERROR = "valid api key must be provided"
+
 
 def refused_connection_error() -> aiohttp.ClientConnectorError:
     """Return the error aiohttp raises when the host refuses the connection."""
@@ -83,6 +86,7 @@ class AnkiConnectResponder:
     def __init__(self, aioclient_mock: AiohttpClientMocker) -> None:
         """Wire the responder into the aiohttp client mocker."""
         self._version: int = 6
+        self._required_key: str | None = None
         self._version_error: str | None = None
         self._multi_error: str | None = None
         self._sync_error: str | None = None
@@ -94,6 +98,10 @@ class AnkiConnectResponder:
         self.add_note_call_count = 0
         self.sync_call_count = 0
         aioclient_mock.post(TEST_URL, side_effect=self._respond)
+
+    def require_key(self, key: str | None) -> None:
+        """Reject requests whose "key" differs from `key`; None means no apiKey is set."""
+        self._required_key = key
 
     def set_version_error(self, error: str) -> None:
         """Make the "version" action return an AnkiConnect error."""
@@ -127,6 +135,10 @@ class AnkiConnectResponder:
         self, method: str, url: Any, data: dict[str, Any]
     ) -> AiohttpClientMockResponse:
         """Build the AnkiConnect-shaped JSON response for one request."""
+        if data.get("key") != self._required_key:
+            return AiohttpClientMockResponse(
+                method, url, json={"result": None, "error": INVALID_KEY_ERROR}
+            )
         action = data["action"]
         if action == "version":
             body = (
@@ -166,6 +178,8 @@ class AnkiConnectResponder:
 
     def _sub_result(self, action: dict[str, Any]) -> dict[str, Any]:
         """Build one sub-action's result within a "multi" response."""
+        if action.get("key") != self._required_key:
+            return {"result": None, "error": INVALID_KEY_ERROR}
         if action["action"] == "getNumCardsReviewedToday":
             return {"result": self._reviewed_today, "error": None}
 

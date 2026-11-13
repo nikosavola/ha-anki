@@ -1,6 +1,7 @@
 """Tests for the AnkiConnect API client."""
 
-from collections.abc import AsyncGenerator
+from collections.abc import AsyncGenerator, Callable
+from functools import partial
 from http import HTTPStatus
 
 import aiohttp
@@ -13,6 +14,7 @@ from custom_components.ha_anki.api import (
     AnkiConnectApiError,
     AnkiConnectClient,
     AnkiConnectConnectionError,
+    AnkiConnectInvalidApiKeyError,
     AnkiConnectTimeoutError,
     AnkiConnectUnexpectedResponseError,
     AnkiConnectUnreachableError,
@@ -36,6 +38,18 @@ async def client(
     session = aioclient_mock.create_session(hass.loop)
     try:
         yield AnkiConnectClient(session, TEST_HOST, TEST_PORT)
+    finally:
+        await session.close()
+
+
+@pytest.fixture
+async def make_client(
+    hass: HomeAssistant, aioclient_mock: AiohttpClientMocker
+) -> AsyncGenerator[Callable[..., AnkiConnectClient]]:
+    """Return a factory for clients, with optional constructor kwargs like api_key."""
+    session = aioclient_mock.create_session(hass.loop)
+    try:
+        yield partial(AnkiConnectClient, session, TEST_HOST, TEST_PORT)
     finally:
         await session.close()
 
@@ -260,3 +274,65 @@ async def test_sync_uses_a_longer_timeout(
     await client.sync()
 
     assert captured.get("request_timeout") is SYNC_REQUEST_TIMEOUT
+
+
+async def test_request_sends_api_key(
+    make_client: Callable[..., AnkiConnectClient],
+    anki_responder: AnkiConnectResponder,
+    aioclient_mock: AiohttpClientMocker,
+) -> None:
+    """A configured apiKey is sent with the request, so AnkiConnect accepts it."""
+    anki_responder.require_key("secret")
+
+    assert await make_client(api_key="secret").get_version() == 6
+    assert aioclient_mock.mock_calls[-1][2]["key"] == "secret"
+
+
+async def test_request_omits_api_key_when_unset(
+    client: AnkiConnectClient,
+    anki_responder: AnkiConnectResponder,
+    aioclient_mock: AiohttpClientMocker,
+) -> None:
+    """With no apiKey configured, the request carries no "key" field at all."""
+    anki_responder.require_key(None)
+
+    assert await client.get_version() == 6
+    assert "key" not in aioclient_mock.mock_calls[-1][2]
+
+
+async def test_multi_sends_api_key_on_every_action(
+    make_client: Callable[..., AnkiConnectClient],
+    anki_responder: AnkiConnectResponder,
+    aioclient_mock: AiohttpClientMocker,
+) -> None:
+    """Each batched action carries the apiKey, since AnkiConnect checks them one by one."""
+    anki_responder.require_key("secret")
+    anki_responder.set_cards("is:due", [1, 2])
+
+    data = await make_client(api_key="secret").get_sensor_data(CARD_QUERIES)
+
+    assert data["cards_due"] == 2
+    sub_actions = aioclient_mock.mock_calls[-1][2]["params"]["actions"]
+    assert all(sub_action["key"] == "secret" for sub_action in sub_actions)
+
+
+async def test_request_raises_invalid_api_key_when_key_is_wrong(
+    make_client: Callable[..., AnkiConnectClient],
+    anki_responder: AnkiConnectResponder,
+) -> None:
+    """A wrong apiKey raises AnkiConnectInvalidApiKeyError."""
+    anki_responder.require_key("secret")
+
+    with pytest.raises(AnkiConnectInvalidApiKeyError):
+        await make_client(api_key="wrong").get_version()
+
+
+async def test_request_raises_invalid_api_key_when_key_is_missing(
+    client: AnkiConnectClient,
+    anki_responder: AnkiConnectResponder,
+) -> None:
+    """A missing apiKey raises AnkiConnectInvalidApiKeyError if AnkiConnect requires one."""
+    anki_responder.require_key("secret")
+
+    with pytest.raises(AnkiConnectInvalidApiKeyError):
+        await client.get_version()

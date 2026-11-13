@@ -8,7 +8,12 @@ from typing import Any
 
 import aiohttp
 
-from .const import ANKICONNECT_API_VERSION, CUSTOM_QUERY_KEY_PREFIX, REVIEWED_TODAY_KEY
+from .const import (
+    ANKICONNECT_API_VERSION,
+    ANKICONNECT_INVALID_KEY_ERROR,
+    CUSTOM_QUERY_KEY_PREFIX,
+    REVIEWED_TODAY_KEY,
+)
 
 REQUEST_TIMEOUT = aiohttp.ClientTimeout(total=10)
 
@@ -43,13 +48,38 @@ class AnkiConnectApiError(AnkiConnectError):
     """Raised when AnkiConnect returns a non-null error field."""
 
 
+class AnkiConnectInvalidApiKeyError(AnkiConnectApiError):
+    """Raised when AnkiConnect rejects a missing or wrong apiKey."""
+
+
 class AnkiConnectClient:
     """Thin async wrapper around the AnkiConnect JSON-RPC-style HTTP API."""
 
-    def __init__(self, session: aiohttp.ClientSession, host: str, port: int) -> None:
+    def __init__(
+        self,
+        session: aiohttp.ClientSession,
+        host: str,
+        port: int,
+        *,
+        api_key: str | None = None,
+    ) -> None:
         """Initialize the client with an existing aiohttp session."""
         self._session = session
         self._url = f"http://{host}:{port}"
+        self._api_key = api_key
+
+    def _action(
+        self, action: str, params: dict[str, Any] | None = None
+    ) -> dict[str, Any]:
+        """Build one action's payload, adding the apiKey when one is configured."""
+        payload: dict[str, Any] = {"action": action, "version": ANKICONNECT_API_VERSION}
+        if params is not None:
+            payload["params"] = params
+        # Left out when unset: AnkiConnect rejects any key it doesn't have configured.
+        if self._api_key is not None:
+            # multi checks the key on each sub-action, not only the outer request.
+            payload["key"] = self._api_key
+        return payload
 
     async def _request(
         self,
@@ -76,11 +106,11 @@ class AnkiConnectClient:
             AnkiConnectConnectionError: If the request fails for another
                 network reason.
             AnkiConnectApiError: If the response's "error" field is non-null.
+            AnkiConnectInvalidApiKeyError: If AnkiConnect rejects a missing or
+                wrong apiKey.
 
         """
-        payload: dict[str, Any] = {"action": action, "version": ANKICONNECT_API_VERSION}
-        if params is not None:
-            payload["params"] = params
+        payload = self._action(action, params)
 
         try:
             async with self._session.post(
@@ -104,6 +134,8 @@ class AnkiConnectClient:
                 f"Unexpected response shape: {body!r}"
             )
         if body["error"] is not None:
+            if body["error"] == ANKICONNECT_INVALID_KEY_ERROR:
+                raise AnkiConnectInvalidApiKeyError(body["error"])
             raise AnkiConnectApiError(body["error"])
         return body["result"]
 
@@ -186,17 +218,9 @@ class AnkiConnectClient:
         """
         names = [*queries, REVIEWED_TODAY_KEY]
         actions = [
-            {
-                "action": "findCards",
-                "version": ANKICONNECT_API_VERSION,
-                "params": {"query": query},
-            }
-            for query in queries.values()
+            self._action("findCards", {"query": query}) for query in queries.values()
         ]
-        actions.append({
-            "action": "getNumCardsReviewedToday",
-            "version": ANKICONNECT_API_VERSION,
-        })
+        actions.append(self._action("getNumCardsReviewedToday"))
         tolerant_indices = {
             index
             for index, name in enumerate(names)
@@ -230,6 +254,8 @@ class AnkiConnectClient:
         Raises:
             AnkiConnectApiError: If AnkiConnect reports an error for the
                 overall request or for a non-tolerated sub-action.
+            AnkiConnectInvalidApiKeyError: If AnkiConnect rejects a missing or
+                wrong apiKey.
             AnkiConnectUnexpectedResponseError: If the reply doesn't have one
                 result per action.
 
@@ -252,6 +278,8 @@ class AnkiConnectClient:
                     _LOGGER.warning("AnkiConnect action failed, ignoring: %s", error)
                     values.append(None)
                     continue
+                if error == ANKICONNECT_INVALID_KEY_ERROR:
+                    raise AnkiConnectInvalidApiKeyError(error)
                 raise AnkiConnectApiError(error)
             values.append(sub_result["result"])
         return values

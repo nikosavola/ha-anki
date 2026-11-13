@@ -27,6 +27,18 @@ class AnkiConnectConnectionError(AnkiConnectError):
     """Raised when AnkiConnect cannot be reached."""
 
 
+class AnkiConnectUnreachableError(AnkiConnectConnectionError):
+    """Raised when the connection is refused or the host can't be reached."""
+
+
+class AnkiConnectTimeoutError(AnkiConnectConnectionError):
+    """Raised when AnkiConnect doesn't answer in time."""
+
+
+class AnkiConnectUnexpectedResponseError(AnkiConnectConnectionError):
+    """Raised when the host answers, but not like AnkiConnect does."""
+
+
 class AnkiConnectApiError(AnkiConnectError):
     """Raised when AnkiConnect returns a non-null error field."""
 
@@ -55,8 +67,14 @@ class AnkiConnectClient:
             The action's "result" value, whose shape depends on the action.
 
         Raises:
-            AnkiConnectConnectionError: If AnkiConnect can't be reached or
-                times out.
+            AnkiConnectUnreachableError: If the connection is refused or the
+                host can't be reached.
+            AnkiConnectTimeoutError: If AnkiConnect doesn't respond in time.
+            AnkiConnectUnexpectedResponseError: If the host answers with an
+                HTTP error, a non-JSON body, or a body that isn't AnkiConnect's
+                reply shape.
+            AnkiConnectConnectionError: If the request fails for another
+                network reason.
             AnkiConnectApiError: If the response's "error" field is non-null.
 
         """
@@ -71,14 +89,23 @@ class AnkiConnectClient:
                 response.raise_for_status()
                 # content_type=None: AnkiConnect doesn't set a JSON content type.
                 body = await response.json(content_type=None)
-        except (TimeoutError, aiohttp.ClientError, ValueError) as err:
+        except aiohttp.ClientConnectorError as err:
+            raise AnkiConnectUnreachableError(str(err)) from err
+        # Must come before ClientError: aiohttp's timeouts subclass both.
+        except TimeoutError as err:
+            raise AnkiConnectTimeoutError(str(err)) from err
+        except (aiohttp.ClientResponseError, ValueError) as err:
+            raise AnkiConnectUnexpectedResponseError(str(err)) from err
+        except aiohttp.ClientError as err:
             raise AnkiConnectConnectionError(str(err)) from err
 
-        if not isinstance(body, dict):
-            raise AnkiConnectConnectionError(f"Unexpected response shape: {body!r}")
-        if body.get("error") is not None:
+        if not isinstance(body, dict) or "result" not in body or "error" not in body:
+            raise AnkiConnectUnexpectedResponseError(
+                f"Unexpected response shape: {body!r}"
+            )
+        if body["error"] is not None:
             raise AnkiConnectApiError(body["error"])
-        return body.get("result")
+        return body["result"]
 
     async def get_version(self) -> int:
         """Return the AnkiConnect API version, also used as a connectivity check."""
@@ -203,20 +230,20 @@ class AnkiConnectClient:
         Raises:
             AnkiConnectApiError: If AnkiConnect reports an error for the
                 overall request or for a non-tolerated sub-action.
-            AnkiConnectConnectionError: If AnkiConnect can't be reached, or
-                replies with an unexpected response shape.
+            AnkiConnectUnexpectedResponseError: If the reply doesn't have one
+                result per action.
 
         """
         results = await self._request("multi", {"actions": actions})
         if not isinstance(results, list) or len(results) != len(actions):
-            raise AnkiConnectConnectionError(
+            raise AnkiConnectUnexpectedResponseError(
                 f"Unexpected multi response shape: {results!r}"
             )
 
         values: list[Any] = []
         for index, sub_result in enumerate(results):
             if not isinstance(sub_result, dict):
-                raise AnkiConnectConnectionError(
+                raise AnkiConnectUnexpectedResponseError(
                     f"Unexpected sub-result shape: {sub_result!r}"
                 )
             error = sub_result.get("error")

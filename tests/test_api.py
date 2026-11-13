@@ -1,6 +1,7 @@
 """Tests for the AnkiConnect API client."""
 
 from collections.abc import AsyncGenerator
+from http import HTTPStatus
 
 import aiohttp
 from homeassistant.core import HomeAssistant
@@ -12,10 +13,19 @@ from custom_components.ha_anki.api import (
     AnkiConnectApiError,
     AnkiConnectClient,
     AnkiConnectConnectionError,
+    AnkiConnectTimeoutError,
+    AnkiConnectUnexpectedResponseError,
+    AnkiConnectUnreachableError,
 )
 from custom_components.ha_anki.const import CARD_QUERIES
 
-from .conftest import TEST_HOST, TEST_PORT, TEST_URL, AnkiConnectResponder
+from .conftest import (
+    TEST_HOST,
+    TEST_PORT,
+    TEST_URL,
+    AnkiConnectResponder,
+    refused_connection_error,
+)
 
 
 @pytest.fixture
@@ -56,6 +66,55 @@ async def test_get_version_raises_on_connection_error(
     )
 
     with pytest.raises(AnkiConnectConnectionError):
+        await client.get_version()
+
+
+async def test_get_version_raises_unreachable_when_connection_refused(
+    client: AnkiConnectClient, aioclient_mock: AiohttpClientMocker
+) -> None:
+    """A refused connection raises AnkiConnectUnreachableError."""
+    aioclient_mock.post(TEST_URL, exc=refused_connection_error())
+
+    with pytest.raises(AnkiConnectUnreachableError):
+        await client.get_version()
+
+
+@pytest.mark.parametrize(
+    "exc",
+    [
+        pytest.param(aiohttp.ConnectionTimeoutError("timed out"), id="connect"),
+        pytest.param(TimeoutError(), id="total"),
+    ],
+)
+async def test_get_version_raises_timeout(
+    client: AnkiConnectClient, aioclient_mock: AiohttpClientMocker, exc: BaseException
+) -> None:
+    """A request that never gets a reply raises AnkiConnectTimeoutError."""
+    aioclient_mock.post(TEST_URL, exc=exc)
+
+    with pytest.raises(AnkiConnectTimeoutError):
+        await client.get_version()
+
+
+@pytest.mark.parametrize(
+    ("status", "text"),
+    [
+        pytest.param(HTTPStatus.NOT_FOUND, "Not Found", id="http-error"),
+        pytest.param(HTTPStatus.OK, "<html>not json</html>", id="not-json"),
+        pytest.param(HTTPStatus.OK, "[]", id="json-list"),
+        pytest.param(HTTPStatus.OK, '{"unexpected": true}', id="no-result-or-error"),
+    ],
+)
+async def test_get_version_raises_unexpected_response(
+    client: AnkiConnectClient,
+    aioclient_mock: AiohttpClientMocker,
+    status: HTTPStatus,
+    text: str,
+) -> None:
+    """A reply that isn't AnkiConnect's shape raises AnkiConnectUnexpectedResponseError."""
+    aioclient_mock.post(TEST_URL, status=status, text=text)
+
+    with pytest.raises(AnkiConnectUnexpectedResponseError):
         await client.get_version()
 
 

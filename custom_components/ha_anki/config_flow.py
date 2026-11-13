@@ -18,7 +18,14 @@ from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from homeassistant.util import slugify
 import voluptuous as vol
 
-from .api import AnkiConnectClient, AnkiConnectConnectionError, AnkiConnectError
+from .api import (
+    AnkiConnectClient,
+    AnkiConnectConnectionError,
+    AnkiConnectError,
+    AnkiConnectTimeoutError,
+    AnkiConnectUnexpectedResponseError,
+    AnkiConnectUnreachableError,
+)
 from .const import (
     CARD_QUERIES,
     CONF_AUTO_SYNC_INTERVAL,
@@ -65,6 +72,12 @@ class AnkiConnectConfigFlow(ConfigFlow, domain=DOMAIN):
             client = AnkiConnectClient(async_get_clientsession(self.hass), host, port)
             try:
                 await client.get_version()
+            except AnkiConnectUnreachableError:
+                errors["base"] = "cannot_connect_refused"
+            except AnkiConnectTimeoutError:
+                errors["base"] = "timeout_connect"
+            except AnkiConnectUnexpectedResponseError:
+                errors["base"] = "not_ankiconnect"
             except AnkiConnectError:
                 errors["base"] = "cannot_connect"
             except Exception:

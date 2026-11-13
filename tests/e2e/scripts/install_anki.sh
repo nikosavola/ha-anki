@@ -13,7 +13,7 @@ fi
 
 $SUDO apt-get update -qq
 $SUDO apt-get install -y -qq \
-  xvfb curl zstd git xdotool mpv \
+  xvfb curl zstd git mpv \
   libxkbcommon-x11-0 libxcb-cursor0 libxcb-icccm4 libxcb-image0 libxcb-keysyms1 \
   libxcb-randr0 libxcb-render-util0 libxcb-xinerama0 libxcb-shape0 libxcb-shm0 \
   libglib2.0-0 libgl1 libegl1 libfontconfig1 libdbus-1-3 libxrandr2 libxi6 \

@@ -15,6 +15,8 @@ MAX_INTERVAL_MINUTES = 1440
 # in minutes; 0 (MIN_AUTO_SYNC_INTERVAL_MINUTES) disables it.
 CONF_AUTO_SYNC_INTERVAL = "auto_sync_interval"
 MIN_AUTO_SYNC_INTERVAL_MINUTES = 0
+# The app's Anki is headless and only syncs at login, so its entries sync on a timer.
+DEFAULT_DISCOVERY_AUTO_SYNC_MINUTES = 30
 
 ANKICONNECT_API_VERSION = 6
 

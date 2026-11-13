@@ -2,8 +2,11 @@
 
 from __future__ import annotations
 
+import errno
 from typing import Any
 
+import aiohttp
+from aiohttp.client_reqrep import ConnectionKey
 from homeassistant.const import CONF_HOST, CONF_PORT
 import pytest
 from pytest_homeassistant_custom_component.common import MockConfigEntry
@@ -17,6 +20,16 @@ from custom_components.ha_anki.const import DOMAIN
 TEST_HOST = "192.168.1.10"
 TEST_PORT = 8765
 TEST_URL = f"http://{TEST_HOST}:{TEST_PORT}"
+
+
+def refused_connection_error() -> aiohttp.ClientConnectorError:
+    """Return the error aiohttp raises when the host refuses the connection."""
+    connection_key = ConnectionKey(
+        TEST_HOST, TEST_PORT, False, True, None, None, None, None
+    )
+    return aiohttp.ClientConnectorError(
+        connection_key, OSError(errno.ECONNREFUSED, "Connection refused")
+    )
 
 
 def pytest_addoption(parser: pytest.Parser) -> None:

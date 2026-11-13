@@ -1,10 +1,14 @@
 """Tests for the ha-anki config flow."""
 
+from http import HTTPStatus
+from typing import Any
+
 import aiohttp
 from homeassistant.config_entries import SOURCE_USER
 from homeassistant.const import CONF_HOST, CONF_NAME, CONF_PORT, CONF_SCAN_INTERVAL
 from homeassistant.core import HomeAssistant
 from homeassistant.data_entry_flow import FlowResultType
+import pytest
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 from pytest_homeassistant_custom_component.test_util.aiohttp import AiohttpClientMocker
 
@@ -15,7 +19,13 @@ from custom_components.ha_anki.const import (
     DOMAIN,
 )
 
-from .conftest import TEST_HOST, TEST_PORT, TEST_URL, AnkiConnectResponder
+from .conftest import (
+    TEST_HOST,
+    TEST_PORT,
+    TEST_URL,
+    AnkiConnectResponder,
+    refused_connection_error,
+)
 
 
 async def test_user_flow_success(
@@ -86,6 +96,45 @@ async def test_user_flow_network_error_cannot_connect(
 
     assert result["type"] is FlowResultType.FORM
     assert result["errors"] == {"base": "cannot_connect"}
+
+
+@pytest.mark.parametrize(
+    ("mock_kwargs", "expected_error"),
+    [
+        pytest.param(
+            {"exc": refused_connection_error()}, "cannot_connect_refused", id="refused"
+        ),
+        pytest.param(
+            {"exc": aiohttp.ConnectionTimeoutError("timed out")},
+            "timeout_connect",
+            id="timeout",
+        ),
+        pytest.param(
+            {"status": HTTPStatus.NOT_FOUND, "text": "Not Found"},
+            "not_ankiconnect",
+            id="http-error",
+        ),
+        pytest.param({"text": "<html>"}, "not_ankiconnect", id="not-json"),
+    ],
+)
+async def test_user_flow_shows_specific_connection_error(
+    hass: HomeAssistant,
+    aioclient_mock: AiohttpClientMocker,
+    mock_kwargs: dict[str, Any],
+    expected_error: str,
+) -> None:
+    """Each kind of connection failure re-shows the form with its own error."""
+    aioclient_mock.post(TEST_URL, **mock_kwargs)
+
+    result = await hass.config_entries.flow.async_init(
+        DOMAIN, context={"source": SOURCE_USER}
+    )
+    result = await hass.config_entries.flow.async_configure(
+        result["flow_id"], {CONF_HOST: TEST_HOST, CONF_PORT: TEST_PORT}
+    )
+
+    assert result["type"] is FlowResultType.FORM
+    assert result["errors"] == {"base": expected_error}
 
 
 async def test_user_flow_unexpected_error(

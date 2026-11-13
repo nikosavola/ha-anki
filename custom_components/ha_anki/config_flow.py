@@ -18,7 +18,7 @@ from homeassistant.const import (
     CONF_PORT,
     CONF_SCAN_INTERVAL,
 )
-from homeassistant.core import callback
+from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers import config_validation as cv
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from homeassistant.helpers.selector import (
@@ -51,6 +51,7 @@ from .const import (
     REVIEWED_TODAY_KEY,
     UPDATE_INTERVAL,
 )
+from .util import normalize_host
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -63,6 +64,36 @@ STEP_USER_DATA_SCHEMA = vol.Schema({
         TextSelectorConfig(type=TextSelectorType.PASSWORD)
     ),
 })
+
+
+async def _async_check_connection(
+    hass: HomeAssistant, host: str, port: int, api_key: str | None
+) -> dict[str, str]:
+    """Ask AnkiConnect for its version, mapping any failure to a form error.
+
+    Returns:
+        A dict of form errors, empty when AnkiConnect answered.
+
+    """
+    client = AnkiConnectClient(
+        async_get_clientsession(hass), host, port, api_key=api_key
+    )
+    try:
+        await client.get_version()
+    except AnkiConnectUnreachableError:
+        return {"base": "cannot_connect_refused"}
+    except AnkiConnectTimeoutError:
+        return {"base": "timeout_connect"}
+    except AnkiConnectUnexpectedResponseError:
+        return {"base": "not_ankiconnect"}
+    except AnkiConnectInvalidApiKeyError:
+        return {CONF_API_KEY: "invalid_api_key"}
+    except AnkiConnectError:
+        return {"base": "cannot_connect"}
+    except Exception:
+        _LOGGER.exception("Unexpected error validating AnkiConnect connection")
+        return {"base": "unknown"}
+    return {}
 
 
 class AnkiConnectConfigFlow(ConfigFlow, domain=DOMAIN):
@@ -78,35 +109,21 @@ class AnkiConnectConfigFlow(ConfigFlow, domain=DOMAIN):
         errors: dict[str, str] = {}
 
         if user_input is not None:
-            host = user_input[CONF_HOST].strip().lower()
-            port = user_input[CONF_PORT]
-            api_key = (user_input.get(CONF_API_KEY) or "").strip() or None
-            await self.async_set_unique_id(f"{host}:{port}")
-            self._abort_if_unique_id_configured()
-
-            data: dict[str, Any] = {CONF_HOST: host, CONF_PORT: port}
-            if api_key is not None:
-                data[CONF_API_KEY] = api_key
-            client = AnkiConnectClient(
-                async_get_clientsession(self.hass), host, port, api_key=api_key
-            )
-            try:
-                await client.get_version()
-            except AnkiConnectUnreachableError:
-                errors["base"] = "cannot_connect_refused"
-            except AnkiConnectTimeoutError:
-                errors["base"] = "timeout_connect"
-            except AnkiConnectUnexpectedResponseError:
-                errors["base"] = "not_ankiconnect"
-            except AnkiConnectInvalidApiKeyError:
-                errors[CONF_API_KEY] = "invalid_api_key"
-            except AnkiConnectError:
-                errors["base"] = "cannot_connect"
-            except Exception:
-                _LOGGER.exception("Unexpected error validating AnkiConnect connection")
-                errors["base"] = "unknown"
+            normalized = normalize_host(user_input[CONF_HOST], user_input[CONF_PORT])
+            if normalized is None:
+                errors[CONF_HOST] = "invalid_host"
             else:
-                return self.async_create_entry(title=f"Anki ({host})", data=data)
+                host, port = normalized
+                api_key = (user_input.get(CONF_API_KEY) or "").strip() or None
+                await self.async_set_unique_id(f"{host}:{port}")
+                self._abort_if_unique_id_configured()
+
+                errors = await _async_check_connection(self.hass, host, port, api_key)
+                if not errors:
+                    data: dict[str, Any] = {CONF_HOST: host, CONF_PORT: port}
+                    if api_key is not None:
+                        data[CONF_API_KEY] = api_key
+                    return self.async_create_entry(title=f"Anki ({host})", data=data)
 
         return self.async_show_form(
             step_id="user", data_schema=STEP_USER_DATA_SCHEMA, errors=errors

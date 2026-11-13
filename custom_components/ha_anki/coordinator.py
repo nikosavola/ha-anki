@@ -10,9 +10,10 @@ from typing import Any
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import CONF_SCAN_INTERVAL
 from homeassistant.core import HomeAssistant
+from homeassistant.exceptions import ConfigEntryAuthFailed
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 
-from .api import AnkiConnectClient, AnkiConnectError
+from .api import AnkiConnectClient, AnkiConnectError, AnkiConnectInvalidApiKeyError
 from .const import (
     CARD_QUERIES,
     CONF_CUSTOM_QUERIES,
@@ -76,5 +77,9 @@ class AnkiConnectDataUpdateCoordinator(DataUpdateCoordinator[dict[str, int | Non
         }
         try:
             return await self.client.get_sensor_data(queries)
+        except AnkiConnectInvalidApiKeyError as err:
+            raise ConfigEntryAuthFailed(
+                f"AnkiConnect rejected the API key: {err}"
+            ) from err
         except AnkiConnectError as err:
             raise UpdateFailed(f"Error communicating with AnkiConnect: {err}") from err

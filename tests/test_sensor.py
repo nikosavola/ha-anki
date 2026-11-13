@@ -2,8 +2,13 @@
 
 from datetime import timedelta
 
-from homeassistant.config_entries import ConfigEntryState
-from homeassistant.const import ATTR_ENTITY_ID, CONF_NAME, CONF_SCAN_INTERVAL
+from homeassistant.config_entries import SOURCE_REAUTH, ConfigEntryState
+from homeassistant.const import (
+    ATTR_ENTITY_ID,
+    CONF_API_KEY,
+    CONF_NAME,
+    CONF_SCAN_INTERVAL,
+)
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers import entity_registry as er
@@ -77,6 +82,27 @@ async def test_setup_retries_on_update_failure(
 
     assert mock_config_entry.state is ConfigEntryState.SETUP_RETRY
     assert _maybe_entity_id(hass, mock_config_entry, "cards_due") is None
+
+
+async def test_setup_starts_reauth_when_api_key_is_rejected(
+    hass: HomeAssistant,
+    anki_responder: AnkiConnectResponder,
+    mock_config_entry: MockConfigEntry,
+) -> None:
+    """A rejected API key fails setup and starts a re-authentication flow, not a retry."""
+    mock_config_entry.add_to_hass(hass)
+    hass.config_entries.async_update_entry(
+        mock_config_entry, data={**mock_config_entry.data, CONF_API_KEY: "wrong"}
+    )
+    anki_responder.require_key("secret")
+
+    assert not await hass.config_entries.async_setup(mock_config_entry.entry_id)
+    await hass.async_block_till_done()
+
+    assert mock_config_entry.state is ConfigEntryState.SETUP_ERROR
+    assert (
+        len(list(mock_config_entry.async_get_active_flows(hass, {SOURCE_REAUTH}))) == 1
+    )
 
 
 async def test_coordinator_polls_on_interval(

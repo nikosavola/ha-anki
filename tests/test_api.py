@@ -1,6 +1,6 @@
 """Tests for the AnkiConnect API client."""
 
-from collections.abc import AsyncGenerator, Callable
+from collections.abc import AsyncGenerator, Awaitable, Callable
 from functools import partial
 from http import HTTPStatus
 from typing import Any
@@ -31,6 +31,7 @@ from .conftest import (
     TEST_URL,
     AnkiConnectResponder,
     refused_connection_error,
+    unresolvable_host_error,
 )
 
 
@@ -95,6 +96,17 @@ async def test_get_version_raises_unreachable_when_connection_refused(
 
     with pytest.raises(AnkiConnectUnreachableError):
         await client.get_version()
+
+
+async def test_get_version_raises_generic_connection_error_on_dns_failure(
+    client: AnkiConnectClient, aioclient_mock: AiohttpClientMocker
+) -> None:
+    """A hostname that doesn't resolve is a connection error, not a refused one."""
+    aioclient_mock.post(TEST_URL, exc=unresolvable_host_error())
+
+    with pytest.raises(AnkiConnectConnectionError) as exc_info:
+        await client.get_version()
+    assert type(exc_info.value) is AnkiConnectConnectionError
 
 
 @pytest.mark.parametrize(
@@ -385,3 +397,30 @@ async def test_request_gives_up_after_second_disconnect(
     with pytest.raises(AnkiConnectConnectionError):
         await client.get_version()
     assert len(aioclient_mock.mock_calls) == 2
+
+
+@pytest.mark.parametrize(
+    "write",
+    [
+        pytest.param(
+            lambda client: client.add_note(
+                deck_name="Default",
+                model_name="Basic",
+                fields={"Front": "x", "Back": "y"},
+            ),
+            id="add_note",
+        ),
+        pytest.param(lambda client: client.sync(), id="sync"),
+    ],
+)
+async def test_write_is_not_retried_after_disconnect(
+    client: AnkiConnectClient,
+    aioclient_mock: AiohttpClientMocker,
+    write: Callable[[AnkiConnectClient], Awaitable[object]],
+) -> None:
+    """A write that loses its connection fails once, since a retry could run it twice."""
+    aioclient_mock.post(TEST_URL, exc=aiohttp.ServerDisconnectedError())
+
+    with pytest.raises(AnkiConnectConnectionError):
+        await write(client)
+    assert len(aioclient_mock.mock_calls) == 1

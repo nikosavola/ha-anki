@@ -8,6 +8,7 @@ from typing import Any, override
 
 from homeassistant.config_entries import (
     SOURCE_HASSIO,
+    SOURCE_IGNORE,
     ConfigEntry,
     ConfigFlow,
     ConfigFlowResult,
@@ -78,21 +79,17 @@ STEP_REAUTH_DATA_SCHEMA = vol.Schema({
 
 async def _async_validate_connection(
     hass: HomeAssistant,
-    raw_host: str,
-    raw_port: int,
+    host: str,
+    port: int,
     raw_api_key: str | None,
 ) -> tuple[dict[str, Any] | None, dict[str, str]]:
-    """Normalize the connection fields, then check that AnkiConnect answers.
+    """Check that AnkiConnect answers at a host and port that are already normalized.
 
     Returns:
         The cleaned entry data, or None if validation failed, and a dict of
         form errors, empty on success.
 
     """
-    normalized = normalize_host(raw_host, raw_port)
-    if normalized is None:
-        return None, {CONF_HOST: "invalid_host"}
-    host, port = normalized
     api_key = (raw_api_key or "").strip() or None
 
     client = AnkiConnectClient(
@@ -136,16 +133,23 @@ def _data_with_updates(
     return {**kept, **updates}
 
 
-def _discovered_connection(config: Mapping[str, Any]) -> tuple[str, int, str | None]:
+def _discovered_connection(
+    config: Mapping[str, Any],
+) -> tuple[str, int, str | None] | None:
     """Read the host, port, and API key the Anki app sent to Supervisor.
 
     Returns:
-        The raw host, the port (DEFAULT_PORT if missing), and the stripped API
-        key, or None if the app sent none.
+        The normalized host, the port (DEFAULT_PORT if missing), and the
+        stripped API key, or None if the port or host can't be used.
 
     """
-    host = str(config.get(CONF_HOST, ""))
-    port = int(config.get(CONF_PORT, DEFAULT_PORT))
+    raw_port = str(config.get(CONF_PORT, DEFAULT_PORT))
+    if not raw_port.isdigit():
+        return None
+    normalized = normalize_host(str(config.get(CONF_HOST, "")), int(raw_port))
+    if normalized is None:
+        return None
+    host, port = normalized
     api_key = str(config.get(CONF_API_KEY) or "").strip() or None
     return host, port, api_key
 
@@ -157,7 +161,7 @@ def _retitled(entry: ConfigEntry, new_host: str) -> str:
         The entry's title with the host swapped in if it was the default.
 
     """
-    if entry.title == f"Anki ({entry.data[CONF_HOST]})":
+    if entry.title == f"Anki ({entry.data.get(CONF_HOST)})":
         return f"Anki ({new_host})"
     return entry.title
 
@@ -167,7 +171,8 @@ class AnkiConnectConfigFlow(ConfigFlow, domain=DOMAIN):
 
     VERSION = 1
 
-    _hassio_discovery: HassioServiceInfo | None = None
+    _hassio_discovery: HassioServiceInfo
+    _hassio_connection: tuple[str, int, str | None]
 
     @override
     async def async_step_user(
@@ -177,22 +182,23 @@ class AnkiConnectConfigFlow(ConfigFlow, domain=DOMAIN):
         errors: dict[str, str] = {}
 
         if user_input is not None:
-            # Checked before connecting, so a duplicate aborts even while Anki is closed.
-            if normalized := normalize_host(
-                user_input[CONF_HOST], user_input[CONF_PORT]
-            ):
-                await self.async_set_unique_id(f"{normalized[0]}:{normalized[1]}")
+            normalized = normalize_host(user_input[CONF_HOST], user_input[CONF_PORT])
+            if normalized is None:
+                errors = {CONF_HOST: "invalid_host"}
+            else:
+                host, port = normalized
+                # Checked before connecting, so a duplicate aborts even while Anki is closed.
+                await self.async_set_unique_id(f"{host}:{port}")
                 self._abort_if_unique_id_configured()
-            data, errors = await _async_validate_connection(
-                self.hass,
-                user_input[CONF_HOST],
-                user_input[CONF_PORT],
-                user_input.get(CONF_API_KEY),
-            )
-            if data is not None:
-                return self.async_create_entry(
-                    title=f"Anki ({data[CONF_HOST]})", data=data
+                # App entries are keyed on their slug, so also match on address.
+                self._async_abort_entries_match({CONF_HOST: host, CONF_PORT: port})
+                data, errors = await _async_validate_connection(
+                    self.hass, host, port, user_input.get(CONF_API_KEY)
                 )
+                if data is not None:
+                    return self.async_create_entry(
+                        title=f"Anki ({data[CONF_HOST]})", data=data
+                    )
 
         return self.async_show_form(
             step_id="user", data_schema=STEP_USER_DATA_SCHEMA, errors=errors
@@ -203,34 +209,29 @@ class AnkiConnectConfigFlow(ConfigFlow, domain=DOMAIN):
     ) -> ConfigFlowResult:
         """Change the host, port, or API key, keeping the entry's custom queries."""
         entry = self._get_reconfigure_entry()
+        # Rediscovery overwrites an app entry's connection, so an edit here would be reverted.
+        if entry.source == SOURCE_HASSIO:
+            return self.async_abort(reason="managed_by_app")
         errors: dict[str, str] = {}
 
         if user_input is not None:
-            data, errors = await _async_validate_connection(
-                self.hass,
-                user_input[CONF_HOST],
-                user_input[CONF_PORT],
-                user_input.get(CONF_API_KEY),
-            )
-            if data is not None:
-                unique_id = f"{data[CONF_HOST]}:{data[CONF_PORT]}"
-                existing = await self.async_set_unique_id(
-                    unique_id, raise_on_progress=False
+            normalized = normalize_host(user_input[CONF_HOST], user_input[CONF_PORT])
+            if normalized is None:
+                errors = {CONF_HOST: "invalid_host"}
+            else:
+                host, port = normalized
+                # Skips this entry, so changing only the API key isn't a duplicate.
+                self._async_abort_entries_match({CONF_HOST: host, CONF_PORT: port})
+                data, errors = await _async_validate_connection(
+                    self.hass, host, port, user_input.get(CONF_API_KEY)
                 )
-                # Not _abort_if_unique_id_configured: that would also match this entry
-                # when only the API key changed.
-                if existing is not None and existing.entry_id != entry.entry_id:
-                    return self.async_abort(reason="already_configured")
-
-                # App entries stay keyed on the app slug so later discoveries still match.
-                if entry.source == SOURCE_HASSIO:
-                    unique_id = entry.unique_id
-                return self.async_update_reload_and_abort(
-                    entry,
-                    unique_id=unique_id,
-                    title=_retitled(entry, data[CONF_HOST]),
-                    data=_data_with_updates(entry, data),
-                )
+                if data is not None:
+                    return self.async_update_reload_and_abort(
+                        entry,
+                        unique_id=f"{host}:{port}",
+                        title=_retitled(entry, host),
+                        data=_data_with_updates(entry, data),
+                    )
 
         # Prefill from the entry on first show, and from the rejected input after that.
         suggested = user_input if user_input is not None else entry.data
@@ -246,6 +247,9 @@ class AnkiConnectConfigFlow(ConfigFlow, domain=DOMAIN):
         self, _entry_data: Mapping[str, Any]
     ) -> ConfigFlowResult:
         """Start re-authentication after AnkiConnect rejects the stored API key."""
+        # The app sends its key with each discovery, so the user has no key to enter.
+        if self._get_reauth_entry().source == SOURCE_HASSIO:
+            return self.async_abort(reason="managed_by_app")
         return await self.async_step_reauth_confirm()
 
     async def async_step_reauth_confirm(
@@ -277,16 +281,19 @@ class AnkiConnectConfigFlow(ConfigFlow, domain=DOMAIN):
         self, discovery_info: HassioServiceInfo
     ) -> ConfigFlowResult:
         """Handle the Anki app announcing itself to Supervisor."""
-        raw_host, raw_port, api_key = _discovered_connection(discovery_info.config)
-        normalized = normalize_host(raw_host, raw_port)
-        if normalized is None:
+        connection = _discovered_connection(discovery_info.config)
+        if connection is None:
             return self.async_abort(reason="invalid_host")
-        host, port = normalized
+        host, port, api_key = connection
         self._hassio_discovery = discovery_info
+        self._hassio_connection = connection
 
         # Keyed on the app slug, not host:port, so a changed hostname updates this entry.
         existing = await self.async_set_unique_id(discovery_info.slug)
         if existing is not None:
+            # Ignored entries hold no connection data, so there's nothing to update.
+            if existing.source == SOURCE_IGNORE:
+                return self.async_abort(reason="already_configured")
             data: dict[str, Any] = {CONF_HOST: host, CONF_PORT: port}
             if api_key is not None:
                 data[CONF_API_KEY] = api_key
@@ -310,12 +317,10 @@ class AnkiConnectConfigFlow(ConfigFlow, domain=DOMAIN):
     ) -> ConfigFlowResult:
         """Ask the user to confirm the discovered app, then verify it answers."""
         discovery_info = self._hassio_discovery
-        if discovery_info is None:
-            return await self.async_step_user()
+        host, port, api_key = self._hassio_connection
         errors: dict[str, str] = {}
 
         if user_input is not None:
-            host, port, api_key = _discovered_connection(discovery_info.config)
             data, errors = await _async_validate_connection(
                 self.hass, host, port, api_key
             )

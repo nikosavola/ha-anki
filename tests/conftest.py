@@ -35,6 +35,16 @@ def refused_connection_error() -> aiohttp.ClientConnectorError:
     )
 
 
+def unresolvable_host_error() -> aiohttp.ClientConnectorDNSError:
+    """Return the error aiohttp raises when the hostname doesn't resolve."""
+    connection_key = ConnectionKey(
+        TEST_HOST, TEST_PORT, False, True, None, None, None, None
+    )
+    return aiohttp.ClientConnectorDNSError(
+        connection_key, OSError("Name or service not known")
+    )
+
+
 def pytest_addoption(parser: pytest.Parser) -> None:
     """Add --run-e2e, opting in to tests/e2e's real-Anki-instance tests."""
     parser.addoption(

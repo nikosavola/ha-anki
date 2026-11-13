@@ -97,7 +97,12 @@ class AnkiConnectResponder:
         self._add_note_error: str | None = None
         self.add_note_call_count = 0
         self.sync_call_count = 0
+        self._aioclient_mock = aioclient_mock
         aioclient_mock.post(TEST_URL, side_effect=self._respond)
+
+    def serve(self, url: str) -> None:
+        """Answer AnkiConnect requests sent to another URL too."""
+        self._aioclient_mock.post(url, side_effect=self._respond)
 
     def require_key(self, key: str | None) -> None:
         """Reject requests whose "key" differs from `key`; None means no apiKey is set."""

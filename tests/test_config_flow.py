@@ -4,7 +4,11 @@ from http import HTTPStatus
 from typing import Any
 
 import aiohttp
-from homeassistant.config_entries import SOURCE_USER
+from homeassistant.config_entries import (
+    SOURCE_RECONFIGURE,
+    SOURCE_USER,
+    ConfigEntryState,
+)
 from homeassistant.const import (
     CONF_API_KEY,
     CONF_HOST,
@@ -32,6 +36,9 @@ from .conftest import (
     AnkiConnectResponder,
     refused_connection_error,
 )
+
+NEW_HOST = "192.168.1.20"
+NEW_URL = f"http://{NEW_HOST}:{TEST_PORT}"
 
 
 async def test_user_flow_success(
@@ -134,6 +141,27 @@ async def test_user_flow_network_error_cannot_connect(
 
     assert result["type"] is FlowResultType.FORM
     assert result["errors"] == {"base": "cannot_connect"}
+
+
+async def test_user_flow_duplicate_aborts_while_anki_is_closed(
+    hass: HomeAssistant,
+    aioclient_mock: AiohttpClientMocker,
+    mock_config_entry: MockConfigEntry,
+) -> None:
+    """Re-adding a configured host aborts instead of showing a connection error."""
+    mock_config_entry.add_to_hass(hass)
+    aioclient_mock.post(TEST_URL, exc=refused_connection_error())
+
+    result = await hass.config_entries.flow.async_init(
+        DOMAIN, context={"source": SOURCE_USER}
+    )
+    result = await hass.config_entries.flow.async_configure(
+        result["flow_id"], {CONF_HOST: f"http://{TEST_HOST}:{TEST_PORT}/"}
+    )
+
+    assert result["type"] is FlowResultType.ABORT
+    assert result["reason"] == "already_configured"
+    assert aioclient_mock.call_count == 0
 
 
 @pytest.mark.parametrize(
@@ -540,3 +568,213 @@ async def test_user_flow_already_configured(
 
     assert result["type"] is FlowResultType.ABORT
     assert result["reason"] == "already_configured"
+
+
+async def test_reconfigure_updates_host_and_reloads(
+    hass: HomeAssistant,
+    anki_responder: AnkiConnectResponder,
+    mock_config_entry: MockConfigEntry,
+) -> None:
+    """A new host updates the existing entry in place, keeps its custom queries, and reloads it."""
+    mock_config_entry.add_to_hass(hass)
+    hass.config_entries.async_update_entry(
+        mock_config_entry,
+        options={
+            CONF_CUSTOM_QUERIES: {
+                "spanish_due": {
+                    CONF_NAME: "Spanish due",
+                    CONF_QUERY: "deck:Spanish is:due",
+                }
+            }
+        },
+    )
+    assert await hass.config_entries.async_setup(mock_config_entry.entry_id)
+    await hass.async_block_till_done()
+    anki_responder.serve(NEW_URL)
+
+    result = await hass.config_entries.flow.async_init(
+        DOMAIN,
+        context={"source": SOURCE_RECONFIGURE, "entry_id": mock_config_entry.entry_id},
+    )
+    result = await hass.config_entries.flow.async_configure(
+        result["flow_id"], {CONF_HOST: NEW_HOST, CONF_PORT: TEST_PORT}
+    )
+    await hass.async_block_till_done()
+
+    assert result["type"] is FlowResultType.ABORT
+    assert result["reason"] == "reconfigure_successful"
+    assert mock_config_entry.data == {CONF_HOST: NEW_HOST, CONF_PORT: TEST_PORT}
+    assert mock_config_entry.unique_id == f"{NEW_HOST}:{TEST_PORT}"
+    assert mock_config_entry.title == f"Anki ({NEW_HOST})"
+    assert mock_config_entry.options[CONF_CUSTOM_QUERIES] == {
+        "spanish_due": {CONF_NAME: "Spanish due", CONF_QUERY: "deck:Spanish is:due"}
+    }
+    assert mock_config_entry.state is ConfigEntryState.LOADED
+
+
+async def test_reconfigure_keeps_a_custom_title(
+    hass: HomeAssistant,
+    anki_responder: AnkiConnectResponder,
+    mock_config_entry: MockConfigEntry,
+) -> None:
+    """A title the user set isn't replaced by the default one when the host changes."""
+    mock_config_entry.add_to_hass(hass)
+    hass.config_entries.async_update_entry(mock_config_entry, title="Office Anki")
+    assert await hass.config_entries.async_setup(mock_config_entry.entry_id)
+    await hass.async_block_till_done()
+    anki_responder.serve(NEW_URL)
+
+    result = await hass.config_entries.flow.async_init(
+        DOMAIN,
+        context={"source": SOURCE_RECONFIGURE, "entry_id": mock_config_entry.entry_id},
+    )
+    result = await hass.config_entries.flow.async_configure(
+        result["flow_id"], {CONF_HOST: NEW_HOST, CONF_PORT: TEST_PORT}
+    )
+    await hass.async_block_till_done()
+
+    assert result["reason"] == "reconfigure_successful"
+    assert mock_config_entry.title == "Office Anki"
+
+
+async def test_reconfigure_changes_api_key_on_same_host(
+    hass: HomeAssistant,
+    anki_responder: AnkiConnectResponder,
+    mock_config_entry: MockConfigEntry,
+) -> None:
+    """Changing only the API key succeeds, so the entry doesn't collide with itself."""
+    mock_config_entry.add_to_hass(hass)
+    assert await hass.config_entries.async_setup(mock_config_entry.entry_id)
+    await hass.async_block_till_done()
+    anki_responder.require_key("secret")
+
+    result = await hass.config_entries.flow.async_init(
+        DOMAIN,
+        context={"source": SOURCE_RECONFIGURE, "entry_id": mock_config_entry.entry_id},
+    )
+    result = await hass.config_entries.flow.async_configure(
+        result["flow_id"],
+        {CONF_HOST: TEST_HOST, CONF_PORT: TEST_PORT, CONF_API_KEY: "secret"},
+    )
+    await hass.async_block_till_done()
+
+    assert result["type"] is FlowResultType.ABORT
+    assert result["reason"] == "reconfigure_successful"
+    assert mock_config_entry.data == {
+        CONF_HOST: TEST_HOST,
+        CONF_PORT: TEST_PORT,
+        CONF_API_KEY: "secret",
+    }
+
+
+async def test_reconfigure_blank_api_key_removes_it(
+    hass: HomeAssistant,
+    anki_responder: AnkiConnectResponder,
+    mock_config_entry: MockConfigEntry,
+) -> None:
+    """Clearing the API key field drops the saved key, since data updates would otherwise keep it."""
+    mock_config_entry.add_to_hass(hass)
+    hass.config_entries.async_update_entry(
+        mock_config_entry,
+        data={**mock_config_entry.data, CONF_API_KEY: "secret"},
+    )
+    anki_responder.require_key("secret")
+    assert await hass.config_entries.async_setup(mock_config_entry.entry_id)
+    await hass.async_block_till_done()
+    anki_responder.require_key(None)
+
+    result = await hass.config_entries.flow.async_init(
+        DOMAIN,
+        context={"source": SOURCE_RECONFIGURE, "entry_id": mock_config_entry.entry_id},
+    )
+    result = await hass.config_entries.flow.async_configure(
+        result["flow_id"],
+        {CONF_HOST: TEST_HOST, CONF_PORT: TEST_PORT, CONF_API_KEY: ""},
+    )
+    await hass.async_block_till_done()
+
+    assert result["type"] is FlowResultType.ABORT
+    assert CONF_API_KEY not in mock_config_entry.data
+
+
+async def test_reconfigure_prefills_current_values(
+    hass: HomeAssistant,
+    anki_responder: AnkiConnectResponder,
+    mock_config_entry: MockConfigEntry,
+) -> None:
+    """The form shows the entry's host, port, and API key as suggestions, not defaults."""
+    mock_config_entry.add_to_hass(hass)
+    hass.config_entries.async_update_entry(
+        mock_config_entry,
+        data={**mock_config_entry.data, CONF_API_KEY: "secret"},
+    )
+    anki_responder.require_key("secret")
+    assert await hass.config_entries.async_setup(mock_config_entry.entry_id)
+    await hass.async_block_till_done()
+
+    result = await hass.config_entries.flow.async_init(
+        DOMAIN,
+        context={"source": SOURCE_RECONFIGURE, "entry_id": mock_config_entry.entry_id},
+    )
+
+    assert result["type"] is FlowResultType.FORM
+    assert result["step_id"] == "reconfigure"
+    assert result["data_schema"] is not None
+    suggestions = {
+        str(key.schema): key.description for key in result["data_schema"].schema
+    }
+    assert suggestions[CONF_HOST] == {"suggested_value": TEST_HOST}
+    assert suggestions[CONF_PORT] == {"suggested_value": TEST_PORT}
+    assert suggestions[CONF_API_KEY] == {"suggested_value": "secret"}
+
+
+async def test_reconfigure_shows_error_and_keeps_entry(
+    hass: HomeAssistant,
+    anki_responder: AnkiConnectResponder,
+    mock_config_entry: MockConfigEntry,
+) -> None:
+    """A new address that fails the connection check re-shows the form and changes nothing."""
+    mock_config_entry.add_to_hass(hass)
+    anki_responder.serve(NEW_URL)
+    anki_responder.set_version_error("collection is not available")
+
+    result = await hass.config_entries.flow.async_init(
+        DOMAIN,
+        context={"source": SOURCE_RECONFIGURE, "entry_id": mock_config_entry.entry_id},
+    )
+    result = await hass.config_entries.flow.async_configure(
+        result["flow_id"], {CONF_HOST: NEW_HOST, CONF_PORT: TEST_PORT}
+    )
+
+    assert result["type"] is FlowResultType.FORM
+    assert result["step_id"] == "reconfigure"
+    assert result["errors"] == {"base": "cannot_connect"}
+    assert mock_config_entry.data == {CONF_HOST: TEST_HOST, CONF_PORT: TEST_PORT}
+
+
+async def test_reconfigure_aborts_when_another_entry_has_the_address(
+    hass: HomeAssistant,
+    anki_responder: AnkiConnectResponder,
+    mock_config_entry: MockConfigEntry,
+) -> None:
+    """Moving an entry onto another entry's host and port aborts instead of duplicating it."""
+    mock_config_entry.add_to_hass(hass)
+    MockConfigEntry(
+        domain=DOMAIN,
+        title=f"Anki ({NEW_HOST})",
+        unique_id=f"{NEW_HOST}:{TEST_PORT}",
+        data={CONF_HOST: NEW_HOST, CONF_PORT: TEST_PORT},
+    ).add_to_hass(hass)
+    anki_responder.serve(NEW_URL)
+
+    result = await hass.config_entries.flow.async_init(
+        DOMAIN,
+        context={"source": SOURCE_RECONFIGURE, "entry_id": mock_config_entry.entry_id},
+    )
+    result = await hass.config_entries.flow.async_configure(
+        result["flow_id"], {CONF_HOST: NEW_HOST, CONF_PORT: TEST_PORT}
+    )
+
+    assert result["type"] is FlowResultType.ABORT
+    assert result["reason"] == "already_configured"
+    assert mock_config_entry.data == {CONF_HOST: TEST_HOST, CONF_PORT: TEST_PORT}

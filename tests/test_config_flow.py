@@ -5,6 +5,7 @@ from typing import Any
 
 import aiohttp
 from homeassistant.config_entries import (
+    SOURCE_HASSIO,
     SOURCE_REAUTH,
     SOURCE_RECONFIGURE,
     SOURCE_USER,
@@ -19,6 +20,7 @@ from homeassistant.const import (
 )
 from homeassistant.core import HomeAssistant
 from homeassistant.data_entry_flow import FlowResultType
+from homeassistant.helpers.service_info.hassio import HassioServiceInfo
 import pytest
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 from pytest_homeassistant_custom_component.test_util.aiohttp import AiohttpClientMocker
@@ -27,6 +29,7 @@ from custom_components.ha_anki.const import (
     CONF_AUTO_SYNC_INTERVAL,
     CONF_CUSTOM_QUERIES,
     CONF_QUERY,
+    DEFAULT_DISCOVERY_AUTO_SYNC_MINUTES,
     DOMAIN,
 )
 
@@ -889,3 +892,225 @@ async def test_options_flow_add_query_reports_rejected_api_key(
     assert (
         len(list(mock_config_entry.async_get_active_flows(hass, {SOURCE_REAUTH}))) == 1
     )
+
+
+APP_SLUG = "abc123_anki"
+APP_NAME = "Anki"
+APP_HOST = "abc123-anki"
+APP_URL = f"http://{APP_HOST}:{TEST_PORT}"
+STALE_APP_HOST = "abc123-old"
+STALE_APP_URL = f"http://{STALE_APP_HOST}:{TEST_PORT}"
+
+
+def _discovery(host: str = APP_HOST, api_key: str | None = None) -> HassioServiceInfo:
+    """Build the discovery info the Anki app sends to Supervisor."""
+    config: dict[str, Any] = {CONF_HOST: host, CONF_PORT: TEST_PORT}
+    if api_key is not None:
+        config[CONF_API_KEY] = api_key
+    return HassioServiceInfo(config=config, name=APP_NAME, slug=APP_SLUG, uuid="0" * 32)
+
+
+async def test_hassio_discovery_creates_entry_after_confirm(
+    hass: HomeAssistant, anki_responder: AnkiConnectResponder
+) -> None:
+    """Confirming a discovered app creates an entry that auto-syncs by default."""
+    anki_responder.serve(APP_URL)
+
+    result = await hass.config_entries.flow.async_init(
+        DOMAIN, context={"source": SOURCE_HASSIO}, data=_discovery()
+    )
+    assert result["type"] is FlowResultType.FORM
+    assert result["step_id"] == "hassio_confirm"
+    assert result["description_placeholders"] == {"addon": APP_NAME}
+
+    result = await hass.config_entries.flow.async_configure(result["flow_id"], {})
+    await hass.async_block_till_done()
+
+    assert result["type"] is FlowResultType.CREATE_ENTRY
+    assert result["title"] == f"Anki ({APP_HOST})"
+    assert result["data"] == {CONF_HOST: APP_HOST, CONF_PORT: TEST_PORT}
+    assert result["options"] == {
+        CONF_AUTO_SYNC_INTERVAL: DEFAULT_DISCOVERY_AUTO_SYNC_MINUTES
+    }
+    assert result["result"].unique_id == APP_SLUG
+
+
+async def test_hassio_discovery_stores_api_key(
+    hass: HomeAssistant, anki_responder: AnkiConnectResponder
+) -> None:
+    """An API key the app sent is validated and saved with the entry."""
+    anki_responder.require_key("secret")
+    anki_responder.serve(APP_URL)
+
+    result = await hass.config_entries.flow.async_init(
+        DOMAIN, context={"source": SOURCE_HASSIO}, data=_discovery(api_key="secret")
+    )
+    result = await hass.config_entries.flow.async_configure(result["flow_id"], {})
+    await hass.async_block_till_done()
+
+    assert result["type"] is FlowResultType.CREATE_ENTRY
+    assert result["data"] == {
+        CONF_HOST: APP_HOST,
+        CONF_PORT: TEST_PORT,
+        CONF_API_KEY: "secret",
+    }
+
+
+async def test_hassio_confirm_shows_connection_error(
+    hass: HomeAssistant, aioclient_mock: AiohttpClientMocker
+) -> None:
+    """A failed check on confirm re-shows the form with an error, so the user can retry."""
+    aioclient_mock.post(
+        APP_URL, exc=aiohttp.ClientConnectionError("Connection refused")
+    )
+
+    result = await hass.config_entries.flow.async_init(
+        DOMAIN, context={"source": SOURCE_HASSIO}, data=_discovery()
+    )
+    result = await hass.config_entries.flow.async_configure(result["flow_id"], {})
+
+    assert result["type"] is FlowResultType.FORM
+    assert result["step_id"] == "hassio_confirm"
+    assert result["errors"] == {"base": "cannot_connect"}
+    assert result["description_placeholders"] == {"addon": APP_NAME}
+
+
+async def test_hassio_discovery_rejects_unusable_host(hass: HomeAssistant) -> None:
+    """A host that can't be normalized aborts without creating or changing anything."""
+    result = await hass.config_entries.flow.async_init(
+        DOMAIN, context={"source": SOURCE_HASSIO}, data=_discovery(host="  ")
+    )
+
+    assert result["type"] is FlowResultType.ABORT
+    assert result["reason"] == "invalid_host"
+
+
+async def test_hassio_rediscovery_with_new_host_updates_and_reloads(
+    hass: HomeAssistant, anki_responder: AnkiConnectResponder
+) -> None:
+    """A changed hostname updates the existing app entry and aborts as already configured."""
+    entry = MockConfigEntry(
+        domain=DOMAIN,
+        title=f"Anki ({STALE_APP_HOST})",
+        unique_id=APP_SLUG,
+        source=SOURCE_HASSIO,
+        data={CONF_HOST: STALE_APP_HOST, CONF_PORT: TEST_PORT},
+        options={CONF_AUTO_SYNC_INTERVAL: DEFAULT_DISCOVERY_AUTO_SYNC_MINUTES},
+    )
+    entry.add_to_hass(hass)
+    anki_responder.serve(STALE_APP_URL)
+    anki_responder.serve(APP_URL)
+    assert await hass.config_entries.async_setup(entry.entry_id)
+    await hass.async_block_till_done()
+
+    result = await hass.config_entries.flow.async_init(
+        DOMAIN, context={"source": SOURCE_HASSIO}, data=_discovery()
+    )
+    await hass.async_block_till_done()
+
+    assert result["type"] is FlowResultType.ABORT
+    assert result["reason"] == "already_configured"
+    assert entry.data == {CONF_HOST: APP_HOST, CONF_PORT: TEST_PORT}
+    assert entry.title == f"Anki ({APP_HOST})"
+    assert entry.state is ConfigEntryState.LOADED
+    assert len(hass.config_entries.async_entries(DOMAIN)) == 1
+
+
+async def test_hassio_rediscovery_without_api_key_clears_it(
+    hass: HomeAssistant, anki_responder: AnkiConnectResponder
+) -> None:
+    """An app that no longer sends a key drops the one the entry stored."""
+    entry = MockConfigEntry(
+        domain=DOMAIN,
+        title=f"Anki ({APP_HOST})",
+        unique_id=APP_SLUG,
+        source=SOURCE_HASSIO,
+        data={CONF_HOST: APP_HOST, CONF_PORT: TEST_PORT, CONF_API_KEY: "secret"},
+        options={CONF_AUTO_SYNC_INTERVAL: DEFAULT_DISCOVERY_AUTO_SYNC_MINUTES},
+    )
+    entry.add_to_hass(hass)
+    anki_responder.require_key("secret")
+    anki_responder.serve(APP_URL)
+    assert await hass.config_entries.async_setup(entry.entry_id)
+    await hass.async_block_till_done()
+    anki_responder.require_key(None)
+
+    result = await hass.config_entries.flow.async_init(
+        DOMAIN, context={"source": SOURCE_HASSIO}, data=_discovery()
+    )
+    await hass.async_block_till_done()
+
+    assert result["type"] is FlowResultType.ABORT
+    assert result["reason"] == "already_configured"
+    assert entry.data == {CONF_HOST: APP_HOST, CONF_PORT: TEST_PORT}
+    assert entry.state is ConfigEntryState.LOADED
+
+
+async def test_hassio_rediscovery_unchanged_aborts_without_reload(
+    hass: HomeAssistant,
+) -> None:
+    """Re-announcing the same app with the same details changes nothing."""
+    entry = MockConfigEntry(
+        domain=DOMAIN,
+        title=f"Anki ({APP_HOST})",
+        unique_id=APP_SLUG,
+        source=SOURCE_HASSIO,
+        data={CONF_HOST: APP_HOST, CONF_PORT: TEST_PORT},
+    )
+    entry.add_to_hass(hass)
+
+    result = await hass.config_entries.flow.async_init(
+        DOMAIN, context={"source": SOURCE_HASSIO}, data=_discovery()
+    )
+
+    assert result["type"] is FlowResultType.ABORT
+    assert result["reason"] == "already_configured"
+    assert entry.data == {CONF_HOST: APP_HOST, CONF_PORT: TEST_PORT}
+    assert entry.state is ConfigEntryState.NOT_LOADED
+
+
+async def test_hassio_discovery_matching_manual_entry_aborts(
+    hass: HomeAssistant, mock_config_entry: MockConfigEntry
+) -> None:
+    """An app discovered at the address of a manual entry doesn't add a second one."""
+    mock_config_entry.add_to_hass(hass)
+
+    result = await hass.config_entries.flow.async_init(
+        DOMAIN,
+        context={"source": SOURCE_HASSIO},
+        data=_discovery(host=TEST_HOST),
+    )
+
+    assert result["type"] is FlowResultType.ABORT
+    assert result["reason"] == "already_configured"
+    assert len(hass.config_entries.async_entries(DOMAIN)) == 1
+
+
+async def test_reconfigure_keeps_app_entry_keyed_on_slug(
+    hass: HomeAssistant, anki_responder: AnkiConnectResponder
+) -> None:
+    """Reconfiguring an app entry keeps its slug unique id, so rediscovery still matches."""
+    entry = MockConfigEntry(
+        domain=DOMAIN,
+        title=f"Anki ({APP_HOST})",
+        unique_id=APP_SLUG,
+        source=SOURCE_HASSIO,
+        data={CONF_HOST: APP_HOST, CONF_PORT: TEST_PORT},
+    )
+    entry.add_to_hass(hass)
+    anki_responder.serve(APP_URL)
+    anki_responder.serve(NEW_URL)
+    assert await hass.config_entries.async_setup(entry.entry_id)
+    await hass.async_block_till_done()
+
+    result = await hass.config_entries.flow.async_init(
+        DOMAIN, context={"source": SOURCE_RECONFIGURE, "entry_id": entry.entry_id}
+    )
+    result = await hass.config_entries.flow.async_configure(
+        result["flow_id"], {CONF_HOST: NEW_HOST, CONF_PORT: TEST_PORT}
+    )
+    await hass.async_block_till_done()
+
+    assert result["reason"] == "reconfigure_successful"
+    assert entry.data[CONF_HOST] == NEW_HOST
+    assert entry.unique_id == APP_SLUG

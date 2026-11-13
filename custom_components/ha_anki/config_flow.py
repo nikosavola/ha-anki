@@ -7,6 +7,7 @@ import logging
 from typing import Any, override
 
 from homeassistant.config_entries import (
+    SOURCE_HASSIO,
     ConfigEntry,
     ConfigFlow,
     ConfigFlowResult,
@@ -27,6 +28,7 @@ from homeassistant.helpers.selector import (
     TextSelectorConfig,
     TextSelectorType,
 )
+from homeassistant.helpers.service_info.hassio import HassioServiceInfo
 from homeassistant.util import slugify
 import voluptuous as vol
 
@@ -44,6 +46,7 @@ from .const import (
     CONF_AUTO_SYNC_INTERVAL,
     CONF_CUSTOM_QUERIES,
     CONF_QUERY,
+    DEFAULT_DISCOVERY_AUTO_SYNC_MINUTES,
     DEFAULT_PORT,
     DOMAIN,
     MAX_INTERVAL_MINUTES,
@@ -133,10 +136,38 @@ def _data_with_updates(
     return {**kept, **updates}
 
 
+def _discovered_connection(config: Mapping[str, Any]) -> tuple[str, int, str | None]:
+    """Read the host, port, and API key the Anki app sent to Supervisor.
+
+    Returns:
+        The raw host, the port (DEFAULT_PORT if missing), and the stripped API
+        key, or None if the app sent none.
+
+    """
+    host = str(config.get(CONF_HOST, ""))
+    port = int(config.get(CONF_PORT, DEFAULT_PORT))
+    api_key = str(config.get(CONF_API_KEY) or "").strip() or None
+    return host, port, api_key
+
+
+def _retitled(entry: ConfigEntry, new_host: str) -> str:
+    """Follow the host in the default "Anki (<host>)" title, keeping a custom one.
+
+    Returns:
+        The entry's title with the host swapped in if it was the default.
+
+    """
+    if entry.title == f"Anki ({entry.data[CONF_HOST]})":
+        return f"Anki ({new_host})"
+    return entry.title
+
+
 class AnkiConnectConfigFlow(ConfigFlow, domain=DOMAIN):
     """Handle a config flow for ha-anki."""
 
     VERSION = 1
+
+    _hassio_discovery: HassioServiceInfo | None = None
 
     @override
     async def async_step_user(
@@ -191,13 +222,13 @@ class AnkiConnectConfigFlow(ConfigFlow, domain=DOMAIN):
                 if existing is not None and existing.entry_id != entry.entry_id:
                     return self.async_abort(reason="already_configured")
 
-                title = entry.title
-                if entry.title == f"Anki ({entry.data[CONF_HOST]})":
-                    title = f"Anki ({data[CONF_HOST]})"
+                # App entries stay keyed on the app slug so later discoveries still match.
+                if entry.source == SOURCE_HASSIO:
+                    unique_id = entry.unique_id
                 return self.async_update_reload_and_abort(
                     entry,
                     unique_id=unique_id,
-                    title=title,
+                    title=_retitled(entry, data[CONF_HOST]),
                     data=_data_with_updates(entry, data),
                 )
 
@@ -239,6 +270,69 @@ class AnkiConnectConfigFlow(ConfigFlow, domain=DOMAIN):
         return self.async_show_form(
             step_id="reauth_confirm",
             data_schema=STEP_REAUTH_DATA_SCHEMA,
+            errors=errors,
+        )
+
+    async def async_step_hassio(
+        self, discovery_info: HassioServiceInfo
+    ) -> ConfigFlowResult:
+        """Handle the Anki app announcing itself to Supervisor."""
+        raw_host, raw_port, api_key = _discovered_connection(discovery_info.config)
+        normalized = normalize_host(raw_host, raw_port)
+        if normalized is None:
+            return self.async_abort(reason="invalid_host")
+        host, port = normalized
+        self._hassio_discovery = discovery_info
+
+        # Keyed on the app slug, not host:port, so a changed hostname updates this entry.
+        existing = await self.async_set_unique_id(discovery_info.slug)
+        if existing is not None:
+            data: dict[str, Any] = {CONF_HOST: host, CONF_PORT: port}
+            if api_key is not None:
+                data[CONF_API_KEY] = api_key
+            new_data = _data_with_updates(existing, data)
+            if new_data == existing.data:
+                return self.async_abort(reason="already_configured")
+            return self.async_update_reload_and_abort(
+                existing,
+                title=_retitled(existing, host),
+                data=new_data,
+                reason="already_configured",
+                reload_even_if_entry_is_unchanged=False,
+            )
+
+        # A manual entry for the same address would otherwise get a second copy.
+        self._async_abort_entries_match({CONF_HOST: host, CONF_PORT: port})
+        return await self.async_step_hassio_confirm()
+
+    async def async_step_hassio_confirm(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
+        """Ask the user to confirm the discovered app, then verify it answers."""
+        discovery_info = self._hassio_discovery
+        if discovery_info is None:
+            return await self.async_step_user()
+        errors: dict[str, str] = {}
+
+        if user_input is not None:
+            host, port, api_key = _discovered_connection(discovery_info.config)
+            data, errors = await _async_validate_connection(
+                self.hass, host, port, api_key
+            )
+            if data is not None:
+                return self.async_create_entry(
+                    title=f"Anki ({data[CONF_HOST]})",
+                    data=data,
+                    options={
+                        CONF_AUTO_SYNC_INTERVAL: DEFAULT_DISCOVERY_AUTO_SYNC_MINUTES
+                    },
+                )
+            # This form has no fields, so a field-keyed error would never render.
+            errors = {"base": next(iter(errors.values()))}
+
+        return self.async_show_form(
+            step_id="hassio_confirm",
+            description_placeholders={"addon": discovery_info.name},
             errors=errors,
         )
 

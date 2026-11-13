@@ -38,6 +38,10 @@
         "data_description": {
           "api_key": "Only needed if you set apiKey in AnkiConnect's config."
         }
+      },
+      "hassio_confirm": {
+        "title": "Anki app found",
+        "description": "Set up ha-anki to connect to the Anki app {addon}?"
       }
     },
     "error": {
@@ -51,6 +55,8 @@
     },
     "abort": {
       "already_configured": "This AnkiConnect instance is already configured.",
+      "already_in_progress": "Setup for this AnkiConnect instance is already in progress.",
+      "invalid_host": "The Anki app sent a host name that could not be used.",
       "reconfigure_successful": "The AnkiConnect connection was updated.",
       "reauth_successful": "The AnkiConnect API key was updated."
     }
